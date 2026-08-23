@@ -19,3 +19,6 @@ TestResults/
 .godot/
 *.translation
 export_presets.cfg
+
+# Scratch work
+.scratch/
