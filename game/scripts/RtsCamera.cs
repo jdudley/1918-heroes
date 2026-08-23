@@ -21,14 +21,16 @@ public partial class RtsCamera : Camera3D
 
     private Vector2 _center;
     private float _yaw;            // radians around vertical, 0 = camera south of center
-    private float _distTarget = 55f;
-    private float _dist = 55f;
+    private float _distTarget = 42f;
+    private float _dist = 42f;
     private float _mapW = 1000f;
     private float _mapH = 1000f;
 
     private bool _grabbing;
     private Vector2 _grabLast;
     private Vector2 _grabCenterAtStart;
+    /// <summary>Wheel notches accumulated this frame; applied once so trackpads cannot flood.</summary>
+    private float _pendingZoomSteps;
 
     public void Setup(float mapWidth, float mapHeight)
     {
@@ -42,6 +44,15 @@ public partial class RtsCamera : Camera3D
     public override void _Process(double delta)
     {
         float dt = (float)delta;
+
+        if (Mathf.Abs(_pendingZoomSteps) > 0.01f)
+        {
+            // Plain centre-pivot zoom, one notch = -12% distance (CoH-style).
+            float factor = Mathf.Pow(0.88f, Mathf.Clamp(_pendingZoomSteps, -6f, 6f));
+            _distTarget = Mathf.Clamp(_distTarget * factor, MinDist, MaxDist);
+            _pendingZoomSteps = 0f;
+        }
+
         HandleKeyboardPan(dt);
         HandleEdgeScroll(dt);
         SmoothZoom(dt);
@@ -55,11 +66,17 @@ public partial class RtsCamera : Camera3D
     {
         switch (@event)
         {
-            case InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.WheelUp } mb:
-                ZoomBy(0.82f, mb.Position);
+            case InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.WheelUp }:
+                _pendingZoomSteps -= 1f;
                 break;
-            case InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.WheelDown } mb:
-                ZoomBy(1.22f, mb.Position);
+            case InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.WheelDown }:
+                _pendingZoomSteps += 1f;
+                break;
+            case InputEventKey { Pressed: true, Keycode: Key.Equal }:
+                _pendingZoomSteps -= 1f;
+                break;
+            case InputEventKey { Pressed: true, Keycode: Key.Minus }:
+                _pendingZoomSteps += 1f;
                 break;
             case InputEventMouseButton { ButtonIndex: MouseButton.Middle } mmb:
                 _grabbing = mmb.Pressed;
@@ -75,20 +92,6 @@ public partial class RtsCamera : Camera3D
             case InputEventKey { Pressed: true, Keycode: Key.E }:
                 _yaw -= 0.06f;
                 break;
-        }
-    }
-
-    private void ZoomBy(float factor, Vector2 cursorPos)
-    {
-        float old = _distTarget;
-        _distTarget = Mathf.Clamp(_distTarget * factor, MinDist, MaxDist);
-
-        // Pull the view center toward whatever is under the cursor (CoH-style).
-        var g = GroundPointAt(cursorPos);
-        if (g is not null && old > 0.01f)
-        {
-            float k = Mathf.Clamp(_distTarget / old, 0f, 1f);
-            _center += (g.Value - _center) * (1f - k);
         }
     }
 
@@ -198,17 +201,4 @@ public partial class RtsCamera : Camera3D
         LookAt(new Vector3(_center.X, 0, _center.Y), Vector3.Up);
     }
 
-    /// <summary>Intersect a screen point's ray with the ground plane (world XZ).</summary>
-    private Vector2? GroundPointAt(Vector2 screen)
-    {
-        var origin = ProjectRayOrigin(screen);
-        var dir = ProjectRayNormal(screen);
-        if (Mathf.Abs(dir.Y) < 1e-5f)
-            return null;
-        float t = -origin.Y / dir.Y;
-        if (t < 0)
-            return null;
-        var hit = origin + dir * t;
-        return new Vector2(hit.X, hit.Z);
-    }
 }
