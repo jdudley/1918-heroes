@@ -21,7 +21,6 @@ public partial class SelectionController : Node3D
     private readonly HashSet<int> _selected = new();
 
     private bool _dragging;
-    private bool _groundPanning;
     private Vector2 _dragStart;
     private Vector2 _dragCur;
 
@@ -57,10 +56,6 @@ public partial class SelectionController : Node3D
             case InputEventMouseButton mb:
                 HandleMouseButton(mb);
                 break;
-            case InputEventMouseMotion motion when _groundPanning:
-                _main.CameraDragPanMove(motion.Position);
-                break;
-
             case InputEventMouseMotion motion when _dragging:
                 _dragCur = motion.Position;
                 if ((_dragCur - _dragStart).Length() > BoxThresholdPx)
@@ -94,18 +89,6 @@ public partial class SelectionController : Node3D
     {
         switch (mb.ButtonIndex)
         {
-            case MouseButton.Left when mb.Pressed && _main.GroundPanAllowed(mb.Position):
-                // CoH-style: dragging open ground pans the camera. Pressing on
-                // your own troops still begins selection / drag-box.
-                _groundPanning = true;
-                _main.CameraDragPanBegin(mb.Position);
-                break;
-
-            case MouseButton.Left when !mb.Pressed && _groundPanning:
-                _groundPanning = false;
-                _main.CameraDragPanEnd();
-                break;
-
             case MouseButton.Left when mb.Pressed && (_main.BarrageArmed || _main.GasArmed):
                 // Barrage targeting consumes left clicks while armed.
                 var target = GroundPointAt(mb.Position);

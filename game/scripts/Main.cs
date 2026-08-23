@@ -511,38 +511,6 @@ public partial class Main : Node3D
             _gasMarker.Visible = false;
     }
 
-    // ------------------------------------------------------------------ camera drag arbitration
-
-    public bool IsCameraDragging => _camera != null && _camera.DragPanning;
-
-    /// <summary>
-    /// Ground-press starts a pan unless the player grabbed near one of his own
-    /// squads (that begins selection / drag-box instead). Shift forces box-select
-    /// even from open ground.
-    /// </summary>
-    public bool GroundPanAllowed(Vector2 screen)
-    {
-        if (Input.IsKeyPressed(Key.Shift))
-            return false;
-
-        var cam = GetViewport().GetCamera3D();
-        var units = World.Units;
-        for (int i = 0; i < units.Count; i++)
-        {
-            var u = units[i];
-            if (!u.Alive || u.Side != MySide)
-                continue;
-            float d = (cam.UnprojectPosition(UnitView.ToGodot(u.Pos)) - screen).Length();
-            if (d < 30f)
-                return false;
-        }
-        return true;
-    }
-
-    public void CameraDragPanBegin(Vector2 screen) => _camera?.DragPanBegin(screen);
-    public void CameraDragPanMove(Vector2 screen) => _camera?.DragPanMove(screen);
-    public void CameraDragPanEnd() => _camera?.DragPanEnd();
-
     /// <summary>Buy the Nth entry of your faction's roster (hotkeys 1..N).</summary>
     public void TryRequisitionHotkey(int rosterIndex)
     {
