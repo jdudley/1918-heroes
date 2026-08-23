@@ -30,10 +30,12 @@ dotnet build Heroes1918.sln   # sim, netcode, game, tests
 dotnet test                   # 63 tests: sim behavior + netcode determinism
 ```
 
-Headless smoke — real map, two AIs, up to 7200 ticks, no window:
+Headless verification (all exit non-zero on failure):
 
 ```bash
-godot --headless --path game -- --smoke
+godot --headless --path game -- --smoke     # simulation end-to-end: real map, two AIs
+godot --headless --path game -- --selfplay  # full game scene & frame loop, AI vs AI
+godot --headless --path game -- --inputtest # synthetic mouse events drive selection & orders
 ```
 
 ## Play

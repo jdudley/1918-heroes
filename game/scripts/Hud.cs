@@ -81,6 +81,9 @@ public partial class Hud : CanvasLayer
 
     public void SetHint(string text) => _status.Text = text;
 
+    /// <summary>Current center-banner text (VICTORY / DEFEAT once the match ends).</summary>
+    public string BannerText => _banner.Text;
+
     public void Sync(World world, Side mySide)
     {
         _alliesTickets.Text = $"Allies  {world.Match.TicketsAllies}";

@@ -25,6 +25,7 @@ public partial class Main : Node3D
     private LockstepSession? _session;      // null in solo mode
     private TcpTransport? _tcp;
     private RudimentaryAi? _centralAi;      // solo + host only
+    private RudimentaryAi? _alliesAi;       // test modes: stands in for the human
     private Side _mySide = Side.Allies;
     private int _lastAiTick;
     private double _accumulator;
@@ -36,6 +37,15 @@ public partial class Main : Node3D
     private SelectionController _selection = null!;
     private Hud _hud = null!;
     private List<CapturePointView> _pointViews = new();
+
+    // --- headless test modes (--selfplay, --inputtest) ---
+    private string? _testMode;
+    private int _frame;
+    private bool _testSettled;
+    private int _itPhase;
+    private int _itPhaseFrame;
+    private Fixed2 _itExpectedGoal;
+    private Fixed2 _itStartPos;
 
     // --- menu widgets ---
     private CanvasLayer _menuLayer = null!;
@@ -54,11 +64,24 @@ public partial class Main : Node3D
         var args = OS.GetCmdlineUserArgs();
         foreach (var a in args)
         {
-            if (a == "--smoke")
+            switch (a)
             {
-                RunSmoke();
-                return;
+                case "--smoke":
+                    RunSmoke();
+                    return;
+                case "--selfplay":
+                    _testMode = "selfplay";
+                    break;
+                case "--inputtest":
+                    _testMode = "inputtest";
+                    break;
             }
+        }
+
+        if (_testMode is not null)
+        {
+            StartMatch(networked: false, hosting: false);
+            return;
         }
         BuildMenu();
     }
@@ -188,9 +211,18 @@ public partial class Main : Node3D
 
             case AppMode.Match:
                 TickMatch(delta);
+                if (_testMode is not null)
+                    RunTestChecks();
                 break;
         }
     }
+
+    /// <summary>Faster drain so automated matches actually reach a verdict.</summary>
+    internal static MatchOptions TestOptions() => new()
+    {
+        StartingTickets = 120,
+        TicketDrainPerVpPerSecond = Fixed.FromInt(2),
+    };
 
     private void ReturnToMenu(string reason)
     {
@@ -202,15 +234,18 @@ public partial class Main : Node3D
 
     // ------------------------------------------------------------------ match
 
-    private void StartMatch(bool networked, bool hosting)
+    private void StartMatch(bool networked, bool hosting, MatchOptions? options = null)
     {
-        _menuLayer.QueueFree();
-        _menuLayer = null!;
+        if (_menuLayer is not null)
+        {
+            _menuLayer.QueueFree();
+            _menuLayer = null;
+        }
 
         ulong seed = hosting || !networked ? RandomSeed() : 0; // joiner adopts host seed anyway
 
         var map = JsonMapLoader.Load(MapPath);
-        _world = new World(map, seed);
+        _world = new World(map, seed, options ?? TestOptions());
 
         _mySide = networked && !hosting ? Side.Central : Side.Allies;
         _soloMode = !networked;
@@ -218,6 +253,8 @@ public partial class Main : Node3D
         if (!networked)
         {
             _centralAi = new RudimentaryAi(Side.Central);
+            if (_testMode == "selfplay")
+                _alliesAi = new RudimentaryAi(Side.Allies); // inputtest stays AI-free so orders aren't overwritten
         }
         else
         {
@@ -380,7 +417,9 @@ public partial class Main : Node3D
         }
         else
         {
-            _accumulator += delta;
+            // Test modes fast-forward: same tick pipeline, several ticks per frame.
+            float scaledDelta = _testMode is null ? (float)delta : (float)delta * 8f;
+            _accumulator += scaledDelta;
             while (_accumulator >= TickSeconds && !_world.Match.Finished)
             {
                 _accumulator -= TickSeconds;
@@ -388,7 +427,11 @@ public partial class Main : Node3D
                 var commands = new List<Command>(_pendingLocal);
                 _pendingLocal.Clear();
                 if (!_world.Match.Finished)
+                {
+                    if (_alliesAi is not null)
+                        commands.AddRange(_alliesAi.Think(_world));
                     commands.AddRange(_centralAi!.Think(_world));
+                }
                 _world.Step(commands);
                 worldChanged = true;
             }
@@ -423,6 +466,186 @@ public partial class Main : Node3D
 
         if (_world.Match.Finished && Input.IsKeyPressed(Key.R))
             GetTree().ReloadCurrentScene();
+    }
+
+    // ------------------------------------------------------------------ headless tests
+
+    private void Fail(string mode, string why)
+    {
+        GD.Print($"{mode.ToUpper()} FAIL: {why}");
+        if (_testSettled) return;
+        _testSettled = true;
+        GetTree().Quit(1);
+    }
+
+    private void Pass(string mode, string detail)
+    {
+        GD.Print($"{mode.ToUpper()} OK: {detail}");
+        if (_testSettled) return;
+        _testSettled = true;
+        GetTree().Quit(0);
+    }
+
+    /// <summary>
+    /// --selfplay: the real game scene, real frame loop, real views and HUD —
+    /// both sides driven by AI. Verifies scene wiring, view tracking, and that
+    /// a match reaches a verdict with the banner showing.
+    /// </summary>
+    private void RunSelfPlayChecks()
+    {
+        _frame++;
+
+        if (_frame == 1)
+        {
+            if (UnitViews.Count != _world.Units.Count)
+                Fail("selfplay", $"views {UnitViews.Count} != units {_world.Units.Count}");
+            else if (_pointViews.Count != _world.Points.Count)
+                Fail("selfplay", $"point views {_pointViews.Count} != points {_world.Points.Count}");
+            return;
+        }
+
+        // Sample view sync every few seconds.
+        if (_frame % 180 == 0 && !_testSettled)
+        {
+            foreach (var kv in UnitViews)
+            {
+                var u = _world.Units[kv.Key];
+                if (!u.Alive) continue;
+                float err = kv.Value.CurPos.DistanceTo(UnitView.ToGodot(u.Pos));
+                if (err > 0.5f)
+                {
+                    Fail("selfplay", $"view {kv.Key} drifted {err:0.###} m from sim position");
+                    return;
+                }
+                break;
+            }
+        }
+
+        if (_world.Match.Finished && !_testSettled)
+        {
+            if (_world.Match.Winner is not (Side.Allies or Side.Central))
+            {
+                Fail("selfplay", $"bad winner {_world.Match.Winner}");
+                return;
+            }
+            string banner = _hud.BannerText;
+            if (banner is not ("VICTORY" or "DEFEAT"))
+            {
+                Fail("selfplay", $"banner shows '{banner}' after finish");
+                return;
+            }
+            Pass("selfplay",
+                $"winner={_world.Match.Winner} tick={_world.Tick} " +
+                $"casualties={_world.Units.Count(u => !u.Alive)}");
+        }
+        else if (_world.Tick > 7200 && !_testSettled)
+        {
+            Fail("selfplay", $"no verdict within 7200 ticks (tickets {_world.Match.TicketsAllies}/{_world.Match.TicketsCentral})");
+        }
+    }
+
+    /// <summary>
+    /// --inputtest: synthesizes mouse events through the real input pipeline.
+    /// Click-selects an allied squad, right-clicks the center victory point,
+    /// then verifies the order landed in the sim and the squad marches.
+    /// </summary>
+    private void RunInputTestChecks()
+    {
+        _frame++;
+
+        const int setupFrames = 10;
+        if (_itPhase == 0 && _frame >= setupFrames)
+        {
+            var u = _world.Units[0];
+            if (!u.Alive) { Fail("inputtest", "unit 0 died before the test started"); return; }
+
+            var screen = _camera.UnprojectPosition(UnitView.ToGodot(u.Pos));
+            PushClick(MouseButton.Left, screen);
+            _itPhase = 1;
+            _itPhaseFrame = _frame;
+            return;
+        }
+
+        if (_itPhase == 1 && _frame >= _itPhaseFrame + 3)
+        {
+            if (!_selection.IsSelected(0))
+            {
+                Fail("inputtest", "click on squad did not select it");
+                return;
+            }
+
+            // Right-click the center victory point.
+            var vp = _world.Points[0].Pos;
+            _itExpectedGoal = vp;
+            var vpScreen = _camera.UnprojectPosition(UnitView.ToGodot(vp));
+            PushClick(MouseButton.Right, vpScreen);
+            _itPhase = 2;
+            _itPhaseFrame = _frame;
+            return;
+        }
+
+        if (_itPhase == 2 && _frame >= _itPhaseFrame + 6)
+        {
+            var u = _world.Units[0];
+            if (u.Order != OrderKind.AttackMove)
+            {
+                Fail("inputtest", $"order not received (order={u.Order})");
+                return;
+            }
+            float goalErr = UnitView.ToGodot(u.Goal).DistanceTo(UnitView.ToGodot(_itExpectedGoal));
+            if (goalErr > 1.5f)
+            {
+                Fail("inputtest", $"goal {u.Goal} not near ordered point (err {goalErr:0.##} m)");
+                return;
+            }
+            _itStartPos = u.Pos;
+            _itPhase = 3;
+            _itPhaseFrame = _frame;
+            return;
+        }
+
+        if (_itPhase == 3 && _frame >= _itPhaseFrame + 90)
+        {
+            var u = _world.Units[0];
+            float moved = UnitView.ToGodot(u.Pos).DistanceTo(UnitView.ToGodot(_itStartPos));
+            if (moved < 1f)
+            {
+                Fail("inputtest", $"squad did not march (moved {moved:0.##} m in 3 s)");
+                return;
+            }
+            Pass("inputtest", $"selected, ordered, marched {moved:0.#} m");
+        }
+    }
+
+    private void PushClick(MouseButton button, Vector2 pos)
+    {
+        var press = new InputEventMouseButton
+        {
+            ButtonIndex = button,
+            Pressed = true,
+            Position = pos,
+            GlobalPosition = pos,
+        };
+        GetViewport().PushInput(press);
+
+        var release = new InputEventMouseButton
+        {
+            ButtonIndex = button,
+            Pressed = false,
+            Position = pos,
+            GlobalPosition = pos,
+        };
+        GetViewport().PushInput(release);
+    }
+
+    private void RunTestChecks()
+    {
+        if (_testSettled) return;
+        switch (_testMode)
+        {
+            case "selfplay": RunSelfPlayChecks(); break;
+            case "inputtest": RunInputTestChecks(); break;
+        }
     }
 
     // ------------------------------------------------------------------ smoke

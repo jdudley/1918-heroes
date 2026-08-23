@@ -24,9 +24,16 @@ Two peers run the same seed and input log and must agree bit-for-bit, verified b
 ## Testing
 
 ```bash
-dotnet test                              # 63 tests, all must pass
-godot --headless --path game -- --smoke  # end-to-end: real map, two AIs, no window
+dotnet test                               # 63 tests, all must pass
+godot --headless --path game -- --smoke     # sim end-to-end: real map, two AIs, no window
+godot --headless --path game -- --selfplay  # full game scene + frame loop, AI vs AI,
+                                            # asserts views track units and the verdict banner shows
+godot --headless --path game -- --inputtest # synthesizes real mouse events: click-select a
+                                            # squad, right-click an order, verify it lands in the
+                                            # sim and the squad marches
 ```
+
+All three Godot modes print `... OK` / `... FAIL` and exit 0/1 — check exit codes, not just output. Test matches run with fast ticket drain and an 8x tick-rate fast-forward so they finish in seconds.
 
 - The determinism tests are the product: same seed + same inputs ⇒ identical hash sequences; one extra input ⇒ divergence exactly after it lands. If you broke one of these, nothing else you did matters.
 - Balance work happens through AI-vs-AI self-play (`tests/Sim.Tests/HeadlessMatchTests.cs` is the pattern) — assertion-driven, not manual playtesting. Humans playtest for fun only.

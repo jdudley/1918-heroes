@@ -1,17 +1,20 @@
 using Godot;
 using Sim;
-
 using Side = Sim.Side;
 
 namespace Heroes1918;
 
 /// <summary>
 /// Mouse-driven selection and orders for the local player's side.
+/// Event-driven (not polled) so tests can synthesize input headlessly.
 /// Left drag: box select. Left click: select single / clear. Shift: add.
 /// Right click: attack-move everyone selected to the ground point.
 /// </summary>
 public partial class SelectionController : Node3D
 {
+    private const float BoxThresholdPx = 8f;
+    private const float ClickForgivenessPx = 28f;
+
     private Main _main = null!;
     private Camera3D _camera = null!;
     private SelectionBox _box = null!;
@@ -20,6 +23,9 @@ public partial class SelectionController : Node3D
     private bool _dragging;
     private Vector2 _dragStart;
     private Vector2 _dragCur;
+
+    public int SelectedCount => _selected.Count;
+    public bool IsSelected(int id) => _selected.Contains(id);
 
     public void Init(Main main)
     {
@@ -40,90 +46,92 @@ public partial class SelectionController : Node3D
         _selected.Clear();
     }
 
-    public override void _Process(double delta)
+    public override void _UnhandledInput(InputEvent @event)
     {
-        var world = _main.World;
-        if (world.Match.Finished)
+        if (_main.World.Match.Finished)
             return;
 
-        bool lmb = Input.IsMouseButtonPressed(MouseButton.Left);
-        bool rmbJust = Input.IsMouseButtonPressed(MouseButton.Right) && !_prevRmb;
-        bool lmbJust = lmb && !_prevLmb;
-        bool lmbReleased = !lmb && _prevLmb;
-        _prevLmb = lmb;
-        _prevRmb = Input.IsMouseButtonPressed(MouseButton.Right);
-
-        if (lmbJust)
+        switch (@event)
         {
-            _dragging = true;
-            _dragStart = GetViewport().GetMousePosition();
-            _dragCur = _dragStart;
+            case InputEventMouseButton mb:
+                HandleMouseButton(mb);
+                break;
+            case InputEventMouseMotion motion when _dragging:
+                _dragCur = motion.Position;
+                if ((_dragCur - _dragStart).Length() > BoxThresholdPx)
+                {
+                    var topLeft = new Vector2(
+                        Mathf.Min(_dragStart.X, _dragCur.X),
+                        Mathf.Min(_dragStart.Y, _dragCur.Y));
+                    _box.Visible = true;
+                    _box.SetRect(new Rect2(topLeft, (_dragCur - _dragStart).Abs()));
+                }
+                break;
+            case InputEventKey { Pressed: true, Keycode: Key.Escape }:
+                ClearSelection();
+                break;
         }
-
-        if (_dragging && lmb)
-        {
-            _dragCur = GetViewport().GetMousePosition();
-            if ((_dragCur - _dragStart).Length() > 8f)
-            {
-                _box.Visible = true;
-                var topLeft = new Vector2(Mathf.Min(_dragStart.X, _dragCur.X), Mathf.Min(_dragStart.Y, _dragCur.Y));
-                var size = (_dragCur - _dragStart).Abs();
-                _box.SetRect(new Rect2(topLeft, size));
-            }
-        }
-
-        if (lmbReleased)
-        {
-            _dragging = false;
-            _box.Visible = false;
-            bool additive = Input.IsKeyPressed(Key.Shift);
-            if (!additive) ClearSelection();
-
-            if ((_dragCur - _dragStart).Length() > 8f)
-                BoxSelect(world);
-            else
-                ClickSelect(world);
-
-            RefreshRings();
-        }
-
-        if (rmbJust)
-            IssueAttackMove(world);
-
-        if (Input.IsKeyPressed(Key.Escape))
-            ClearSelection();
     }
 
-    private bool _prevLmb;
-    private bool _prevRmb;
-
-    private void BoxSelect(World world)
+    private void HandleMouseButton(InputEventMouseButton mb)
     {
-        var min = new Vector2(Mathf.Min(_dragStart.X, _dragCur.X), Mathf.Min(_dragStart.Y, _dragCur.Y));
-        var max = new Vector2(Mathf.Max(_dragStart.X, _dragCur.X), Mathf.Max(_dragStart.Y, _dragCur.Y));
+        switch (mb.ButtonIndex)
+        {
+            case MouseButton.Left when mb.Pressed:
+                _dragging = true;
+                _dragStart = mb.Position;
+                _dragCur = mb.Position;
+                break;
 
-        var units = world.Units;
+            case MouseButton.Left when !mb.Pressed && _dragging:
+                _dragging = false;
+                _box.Visible = false;
+
+                if (!Input.IsKeyPressed(Key.Shift))
+                    ClearSelection();
+
+                if ((mb.Position - _dragStart).Length() > BoxThresholdPx)
+                    BoxSelect(_dragStart, mb.Position);
+                else
+                    ClickSelect(mb.Position);
+
+                RefreshRings();
+                break;
+
+            case MouseButton.Right when mb.Pressed:
+                IssueAttackMove(mb.Position);
+                break;
+        }
+    }
+
+    private void BoxSelect(Vector2 start, Vector2 end)
+    {
+        var min = new Vector2(Mathf.Min(start.X, end.X), Mathf.Min(start.Y, end.Y));
+        var max = new Vector2(Mathf.Max(start.X, end.X), Mathf.Max(start.Y, end.Y));
+
+        var units = _main.World.Units;
         for (int i = 0; i < units.Count; i++)
         {
             var u = units[i];
-            if (!u.Alive || u.Side != _main.MySide) continue;
+            if (!u.Alive || u.Side != _main.MySide)
+                continue;
             var screen = _camera.UnprojectPosition(UnitView.ToGodot(u.Pos));
             if (screen.X >= min.X && screen.X <= max.X && screen.Y >= min.Y && screen.Y <= max.Y)
                 _selected.Add(i);
         }
     }
 
-    private void ClickSelect(World world)
+    private void ClickSelect(Vector2 mouse)
     {
-        var mouse = GetViewport().GetMousePosition();
         int best = -1;
-        float bestDist = 28f; // pixels of forgiveness
+        float bestDist = ClickForgivenessPx;
 
-        var units = world.Units;
+        var units = _main.World.Units;
         for (int i = 0; i < units.Count; i++)
         {
             var u = units[i];
-            if (!u.Alive || u.Side != _main.MySide) continue;
+            if (!u.Alive || u.Side != _main.MySide)
+                continue;
             float d = (_camera.UnprojectPosition(UnitView.ToGodot(u.Pos)) - mouse).Length();
             if (d < bestDist)
             {
@@ -141,15 +149,16 @@ public partial class SelectionController : Node3D
         }
     }
 
-    private void IssueAttackMove(World world)
+    private void IssueAttackMove(Vector2 screenPos)
     {
         if (_selected.Count == 0)
             return;
 
-        var ground = GroundPointUnderMouse();
+        var ground = GroundPointAt(screenPos);
         if (ground is null)
             return;
 
+        var world = _main.World;
         foreach (int id in _selected)
         {
             var u = world.Units[id];
@@ -159,12 +168,11 @@ public partial class SelectionController : Node3D
         }
     }
 
-    /// <summary>Intersect the mouse ray with the ground plane; returns sim coordinates.</summary>
-    private Fixed2? GroundPointUnderMouse()
+    /// <summary>Intersect a screen point's camera ray with the ground plane; returns sim coordinates.</summary>
+    public Fixed2? GroundPointAt(Vector2 screen)
     {
-        var mouse = GetViewport().GetMousePosition();
-        var origin = _camera.ProjectRayOrigin(mouse);
-        var dir = _camera.ProjectRayNormal(mouse);
+        var origin = _camera.ProjectRayOrigin(screen);
+        var dir = _camera.ProjectRayNormal(screen);
 
         // Plane y=0: t = -origin.y / dir.y
         if (Mathf.Abs(dir.Y) < 1e-5f)
@@ -181,8 +189,7 @@ public partial class SelectionController : Node3D
 
     private void RefreshRings()
     {
-        var world = _main.World;
-        var units = world.Units;
+        var units = _main.World.Units;
         for (int i = 0; i < units.Count; i++)
         {
             bool sel = _selected.Contains(i) && units[i].Alive && units[i].Side == _main.MySide;
