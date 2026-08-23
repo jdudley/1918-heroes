@@ -1,0 +1,21 @@
+# Build artifacts
+bin/
+obj/
+out/
+*.user
+
+# IDE
+.idea/
+.vs/
+.vscode/
+*.swp
+.DS_Store
+
+# Test results
+TestResults/
+*.trx
+
+# Godot (added later)
+.godot/
+*.translation
+export_presets.cfg
