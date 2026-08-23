@@ -5,7 +5,7 @@ namespace Lockstep;
 public static class Protocol
 {
     /// <summary>Bump when the packet format or semantics change. Peers refuse mismatched versions.</summary>
-    public const ushort Version = 1;
+    public const ushort Version = 2;
 
     public enum PacketType : byte
     {
@@ -112,11 +112,14 @@ public static class Protocol
         w.Write((byte)c.Type);
         w.Write(c.Pos.X.Raw);
         w.Write(c.Pos.Y.Raw);
+        w.Write(c.Alt.X.Raw);
+        w.Write(c.Alt.Y.Raw);
     }
 
     private static Command ReadCommand(BinaryReader r) => new(
         r.ReadInt32(),
         (CommandType)r.ReadByte(),
+        new Fixed2(Fixed.FromRaw(r.ReadInt64()), Fixed.FromRaw(r.ReadInt64())),
         new Fixed2(Fixed.FromRaw(r.ReadInt64()), Fixed.FromRaw(r.ReadInt64())));
 
     // --- HashReport ---

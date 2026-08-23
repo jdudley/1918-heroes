@@ -8,7 +8,7 @@ public static class MovementSystem
         for (int i = 0; i < units.Count; i++)
         {
             var u = units[i];
-            if (!u.Alive || u.Order == OrderKind.Idle)
+            if (!u.Alive || u.Order is OrderKind.Idle or OrderKind.Digging)
                 continue;
 
             // Attack-move chases a live target; plain Move ignores enemies entirely.

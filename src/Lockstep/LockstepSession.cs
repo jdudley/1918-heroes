@@ -334,7 +334,11 @@ public sealed class LockstepSession
             if (c != 0) return c;
             c = a.Pos.X.Raw.CompareTo(b.Pos.X.Raw);
             if (c != 0) return c;
-            return a.Pos.Y.Raw.CompareTo(b.Pos.Y.Raw);
+            c = a.Pos.Y.Raw.CompareTo(b.Pos.Y.Raw);
+            if (c != 0) return c;
+            c = a.Alt.X.Raw.CompareTo(b.Alt.X.Raw);
+            if (c != 0) return c;
+            return a.Alt.Y.Raw.CompareTo(b.Alt.Y.Raw);
         });
         return merged;
     }

@@ -29,8 +29,44 @@ public static class CommandSystem
                     u.Goal = cmd.Pos;
                     u.TargetId = -1;
                     break;
+                case CommandType.Dig:
+                    // Re-issuing Dig must not wipe accumulated progress.
+                    if (u.Order != OrderKind.Digging)
+                        u.DigWork = Fixed.Zero;
+                    u.Order = OrderKind.Digging;
+                    u.Goal = u.Pos;
+                    u.TargetId = -1;
+                    break;
+                case CommandType.Barrage:
+                    TryCallBarrage(world, ref u, cmd);
+                    break;
             }
             world.Units[cmd.UnitId] = u;
         }
+    }
+
+    private static void TryCallBarrage(World world, ref Unit issuer, in Command cmd)
+    {
+        Side side = issuer.Side;
+        if (side is not (Side.Allies or Side.Central))
+            return;
+
+        ref MatchState match = ref world.Match;
+        if (world.Tick < match.NextBarrageTick(side))
+            return; // guns are still repositioning
+
+        var walk = cmd.Alt - cmd.Pos;
+        var step = walk / Fixed.FromInt(SimConfig.ShellsPerBarrage - 1);
+
+        world.Barrages.Add(new Barrage
+        {
+            Side = side,
+            Cursor = cmd.Pos,
+            Step = step,
+            Remaining = SimConfig.ShellsPerBarrage,
+            NextTick = world.Tick + 15, // flight time before first shell lands
+        });
+
+        match.SetNextBarrageTick(side, world.Tick + SimConfig.BarrageCooldownTicks);
     }
 }

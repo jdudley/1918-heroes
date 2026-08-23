@@ -6,9 +6,10 @@ namespace Sim;
 /// </summary>
 public static class LineOfSight
 {
-    public static bool Clear(MapDef map, Fixed2 from, Fixed2 to)
+    /// <summary>Blockers are world state: artillery converts them to rubble mid-match.</summary>
+    public static bool Clear(World world, Fixed2 from, Fixed2 to)
     {
-        var blockers = map.SightBlockers;
+        var blockers = world.Blockers;
         for (int i = 0; i < blockers.Count; i++)
             if (SegmentEntersCircle(from, to, blockers[i].Pos, blockers[i].Radius))
                 return false;

@@ -38,6 +38,15 @@ public partial class Main : Node3D
     private Hud _hud = null!;
     private List<CapturePointView> _pointViews = new();
 
+    // --- barrage targeting ---
+    public bool BarrageArmed { get; private set; }
+    private Fixed2? _barrageStart;
+    private MeshInstance3D? _barrageMarker;
+
+    private readonly List<(MeshInstance3D Node, float Ttl)> _flashes = new();
+    private int _seenDynamicCover;
+    private readonly List<MeshInstance3D> _blockerMeshes = new();
+
     // --- headless test modes (--selfplay, --inputtest) ---
     private string? _testMode;
     private int _frame;
@@ -375,6 +384,158 @@ public partial class Main : Node3D
         RebuildViews(); // identical ids: same map spawns
     }
 
+    // ------------------------------------------------------------------ barrage targeting
+
+    public void ToggleBarrageMode()
+    {
+        if (BarrageArmed) DisarmBarrage();
+        else BarrageArmed = true;
+    }
+
+    public void DisarmBarrage()
+    {
+        BarrageArmed = false;
+        _barrageStart = null;
+        if (_barrageMarker is not null)
+            _barrageMarker.Visible = false;
+    }
+
+    public void HandleBarrageClick(Fixed2 ground)
+    {
+        if (!BarrageArmed) return;
+
+        if (_barrageStart is null)
+        {
+            _barrageStart = ground;
+            EnsureBarrageMarker();
+            _barrageMarker!.Position = UnitView.ToGodot(ground) with { Y = 0.15f };
+            _barrageMarker.Visible = true;
+            return;
+        }
+
+        int caller = FirstAliveOwnedUnit();
+        if (caller >= 0)
+            IssueOrder(new Command(caller, CommandType.Barrage, _barrageStart.Value, ground));
+        DisarmBarrage();
+    }
+
+    private int FirstAliveOwnedUnit()
+    {
+        var units = World.Units;
+        for (int i = 0; i < units.Count; i++)
+            if (units[i].Alive && units[i].Side == MySide)
+                return i;
+        return -1;
+    }
+
+    private void EnsureBarrageMarker()
+    {
+        if (_barrageMarker is not null) return;
+        _barrageMarker = new MeshInstance3D
+        {
+            Mesh = new TorusMesh { InnerRadius = 0.8f, OuterRadius = 1.1f },
+            MaterialOverride = new StandardMaterial3D
+            {
+                AlbedoColor = new Color(1f, 0.85f, 0.3f),
+                ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+            },
+            Scale = new Vector3(1, 0.15f, 1),
+            Visible = false,
+        };
+        AddChild(_barrageMarker);
+    }
+
+    // ------------------------------------------------------------------ battlefield FX
+
+    private void SyncBattlefield(World world)
+    {
+        // Shell flashes.
+        foreach (var pos in world.Explosions)
+            SpawnFlash(pos);
+
+        for (int i = _flashes.Count - 1; i >= 0; i--)
+        {
+            var (node, ttl) = _flashes[i];
+            ttl -= 1f / 60f;
+            if (ttl <= 0)
+            {
+                node.QueueFree();
+                _flashes.RemoveAt(i);
+            }
+            else
+            {
+                float growth = 1f + (0.35f - ttl) * 5f;
+                node.Scale = new Vector3(growth, growth * 0.6f, growth);
+                node.MaterialOverride!.Set("albedo_color",
+                    new Color(1f, 0.7f - 0.4f * (0.35f - ttl), 0.25f));
+            }
+        }
+
+        // New craters / trenches / rubble.
+        var cover = world.DynamicCover;
+        while (_seenDynamicCover < cover.Count)
+        {
+            AddChild(MakeCoverPatch(cover[_seenDynamicCover]));
+            _seenDynamicCover++;
+        }
+
+        // Buildings destroyed -> rebuild blocker meshes.
+        if (_blockerMeshes.Count != world.Blockers.Count)
+        {
+            foreach (var m in _blockerMeshes)
+                m.QueueFree();
+            _blockerMeshes.Clear();
+
+            var buildingMat = new StandardMaterial3D { AlbedoColor = new Color(0.45f, 0.38f, 0.32f) };
+            foreach (var ob in world.Blockers)
+            {
+                float r = ob.Radius.Raw / Fixed.OneRaw;
+                var mesh = new MeshInstance3D
+                {
+                    Mesh = new CylinderMesh { TopRadius = r * 0.8f, BottomRadius = r, Height = 4f },
+                    MaterialOverride = buildingMat,
+                    Position = UnitView.ToGodot(ob.Pos) with { Y = 2f },
+                };
+                AddChild(mesh);
+                _blockerMeshes.Add(mesh);
+            }
+        }
+    }
+
+    private static Node3D MakeCoverPatch(in CoverObject c)
+    {
+        float r = c.Radius.Raw / Fixed.OneRaw;
+        Color color = c.Kind switch
+        {
+            CoverKind.Crater => new Color(0.16f, 0.13f, 0.10f),
+            CoverKind.Trench => new Color(0.24f, 0.27f, 0.16f),
+            _ => new Color(0.40f, 0.36f, 0.31f),
+        };
+        return new MeshInstance3D
+        {
+            Mesh = new CylinderMesh { TopRadius = r, BottomRadius = r, Height = 0.06f },
+            MaterialOverride = new StandardMaterial3D { AlbedoColor = color, Roughness = 1f },
+            Position = UnitView.ToGodot(c.Pos) with { Y = 0.03f },
+        };
+    }
+
+    private void SpawnFlash(Fixed2 simPos)
+    {
+        var node = new MeshInstance3D
+        {
+            Mesh = new SphereMesh { Radius = 1.1f, Height = 2.2f, RadialSegments = 12, Rings = 6 },
+            MaterialOverride = new StandardMaterial3D
+            {
+                AlbedoColor = new Color(1f, 0.75f, 0.3f),
+                ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+                Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
+            },
+            Position = UnitView.ToGodot(simPos) with { Y = 0.6f },
+        };
+        AddChild(node);
+        _flashes.Add((node, 0.35f));
+    }
+
     /// <summary>Called by the selection controller when the local player issues an order.</summary>
     public void IssueOrder(Command command)
     {
@@ -385,6 +546,13 @@ public partial class Main : Node3D
     }
 
     private readonly List<Command> _pendingLocal = new();
+
+    private string BarrageStatusText(World world)
+    {
+        int next = world.Match.NextBarrageTick(MySide);
+        if (world.Tick >= next) return "READY";
+        return $"{(int)MathF.Ceiling((next - world.Tick) / 30f)}s";
+    }
 
     private void TickMatch(double delta)
     {
@@ -461,6 +629,12 @@ public partial class Main : Node3D
 
         for (int i = 0; i < _pointViews.Count && i < _world.Points.Count; i++)
             _pointViews[i].Sync(_world.Points[i]);
+
+        SyncBattlefield(World);
+
+        string barrageStatus = BarrageStatusText(World);
+        string hintPrefix = BarrageArmed ? "BARRAGE: click start then end · " : "";
+        _hud.SetHint($"{hintPrefix}LMB select · drag box · RMB attack-move · B barrage [{barrageStatus}] · WASD pan · wheel zoom");
 
         _hud.Sync(_world, _mySide);
 

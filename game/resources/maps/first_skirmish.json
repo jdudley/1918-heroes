@@ -27,10 +27,12 @@
     { "side": "allies", "type": "rifles", "x": 10, "y": 44 },
     { "side": "allies", "type": "rifles", "x": 10, "y": 54 },
     { "side": "allies", "type": "mg", "x": 16, "y": 36 },
+    { "side": "allies", "type": "engineers", "x": 14, "y": 52 },
     { "side": "central", "type": "rifles", "x": 102, "y": 18 },
     { "side": "central", "type": "rifles", "x": 102, "y": 28 },
     { "side": "central", "type": "rifles", "x": 102, "y": 44 },
     { "side": "central", "type": "rifles", "x": 102, "y": 54 },
-    { "side": "central", "type": "mg", "x": 96, "y": 36 }
+    { "side": "central", "type": "mg", "x": 96, "y": 36 },
+    { "side": "central", "type": "engineers", "x": 98, "y": 52 }
   ]
 }

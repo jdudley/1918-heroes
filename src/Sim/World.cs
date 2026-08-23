@@ -22,8 +22,17 @@ public sealed class World
     public List<CapturePoint> Points = new();
     public MatchState Match;
 
+    /// <summary>Sight blockers as world state: artillery converts them to rubble.</summary>
+    public List<Obstacle> Blockers = new();
+    /// <summary>Cover created during the battle (craters, trenches, rubble).</summary>
+    public List<CoverObject> DynamicCover = new();
+    /// <summary>Artillery strikes currently walking in.</summary>
+    public List<Barrage> Barrages = new();
+
     /// <summary>Transient per-tick output. Excluded from hashing.</summary>
     public List<ShotEvent> Events = new();
+    /// <summary>Shell impact positions this tick; renderer FX only. Excluded from hashing.</summary>
+    public List<Fixed2> Explosions = new();
 
     public World(MapDef map, ulong seed, MatchOptions? options = null)
     {
@@ -42,6 +51,9 @@ public sealed class World
                 Owner = Side.Neutral,
                 Progress = Fixed.Zero,
             });
+
+        foreach (var spec in map.SightBlockers)
+            Blockers.Add(spec);
 
         // Starting armies are part of the map, spawned identically on every peer.
         foreach (var spawn in map.Spawns)
@@ -91,11 +103,14 @@ public sealed class World
     {
         Tick++;
         Events.Clear();
+        Explosions.Clear();
 
         if (commands is { Count: > 0 })
             CommandSystem.Apply(this, commands);
 
         MovementSystem.Step(this);
+        DigSystem.Step(this);
+        ArtillerySystem.Step(this);
         CombatSystem.Step(this);
         SuppressionSystem.Step(this);
         CaptureSystem.Step(this);
@@ -120,6 +135,34 @@ public sealed class World
         h.Mix(Match.AccumCentral.Raw);
         h.Mix(Match.Finished);
         h.Mix((int)Match.Winner);
+        h.Mix(Match.NextBarrageTickAllies);
+        h.Mix(Match.NextBarrageTickCentral);
+
+        h.Mix(Blockers.Count);
+        for (int i = 0; i < Blockers.Count; i++)
+        {
+            h.Mix(Blockers[i].Pos);
+            h.Mix(Blockers[i].Radius.Raw);
+        }
+
+        h.Mix(DynamicCover.Count);
+        for (int i = 0; i < DynamicCover.Count; i++)
+        {
+            h.Mix(DynamicCover[i].Pos);
+            h.Mix(DynamicCover[i].Radius.Raw);
+            h.Mix((int)DynamicCover[i].Kind);
+        }
+
+        h.Mix(Barrages.Count);
+        for (int i = 0; i < Barrages.Count; i++)
+        {
+            var b = Barrages[i];
+            h.Mix((int)b.Side);
+            h.Mix(b.Cursor);
+            h.Mix(b.Step);
+            h.Mix(b.Remaining);
+            h.Mix(b.NextTick);
+        }
 
         h.Mix(Points.Count);
         for (int i = 0; i < Points.Count; i++)
@@ -150,6 +193,7 @@ public sealed class World
             h.Mix(u.Goal);
             h.Mix(u.TargetId);
             h.Mix(u.FireCooldownTicks);
+            h.Mix(u.DigWork.Raw);
             h.Mix(u.Alive);
         }
 

@@ -153,12 +153,12 @@ public class CombatTests
     public void Obstacles_BlockLineOfSight()
     {
         // The building at (48,22) with radius 4 sits between y=18 and y=26.
-        var map = TestWorlds.SmallMap();
+        var world = TestWorlds.Create(1);
         var north = new Fixed2(TestWorlds.M(48), TestWorlds.M(30));
         var south = new Fixed2(TestWorlds.M(48), TestWorlds.M(14));
         var eastFar = new Fixed2(TestWorlds.M(80), TestWorlds.M(30));
 
-        Assert.False(LineOfSight.Clear(map, north, south), "segment through building must be blocked");
-        Assert.True(LineOfSight.Clear(map, eastFar, south), "segment around building must be clear");
+        Assert.False(LineOfSight.Clear(world, north, south), "segment through building must be blocked");
+        Assert.True(LineOfSight.Clear(world, eastFar, south), "segment around building must be clear");
     }
 }

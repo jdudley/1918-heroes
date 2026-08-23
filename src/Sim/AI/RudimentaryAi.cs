@@ -15,6 +15,7 @@ public sealed class RudimentaryAi
     private readonly Side _side;
     private readonly int _replanIntervalTicks;
     private readonly Dictionary<int, Fixed2> _goals = new();
+    private int _lastBarrageTick = -1_000_000;
 
     public RudimentaryAi(Side side, int replanIntervalTicks = 90)
     {
@@ -30,7 +31,10 @@ public sealed class RudimentaryAi
             return commands;
 
         if (world.Tick % _replanIntervalTicks == 0)
+        {
             Replan(world);
+            TryBarrage(world, commands);
+        }
 
         // Re-issue goals for living units whose squads went idle off-target
         // (arrived somewhere that stopped mattering) so they never stand around.
@@ -49,6 +53,56 @@ public sealed class RudimentaryAi
             }
         }
         return commands;
+    }
+
+    /// <summary>
+    /// Fire on the densest enemy cluster when the guns are ready. The sim enforces
+    /// the authoritative cooldown; this heuristic just avoids wasting the window.
+    /// </summary>
+    private void TryBarrage(World world, List<Command> commands)
+    {
+        if (world.Tick - _lastBarrageTick < SimConfig.BarrageCooldownTicks)
+            return;
+
+        var units = world.Units;
+        int bestCenter = -1;
+        int bestCount = 1;
+        for (int i = 0; i < units.Count; i++)
+        {
+            var e = units[i];
+            if (!e.Alive || e.Side == _side || e.Side == Side.Neutral)
+                continue;
+
+            int neighbors = 0;
+            for (int j = 0; j < units.Count; j++)
+            {
+                var o = units[j];
+                if (!o.Alive || o.Side != e.Side)
+                    continue;
+                if (e.Pos.DistanceSquaredTo(o.Pos) <= Fixed.FromInt(8) * Fixed.FromInt(8))
+                    neighbors++;
+            }
+
+            if (neighbors > bestCount)
+            {
+                bestCount = neighbors;
+                bestCenter = i;
+            }
+        }
+
+        if (bestCenter < 0)
+            return;
+
+        int caller = -1;
+        for (int i = 0; i < units.Count && caller < 0; i++)
+            if (units[i].Alive && units[i].Side == _side)
+                caller = i;
+        if (caller < 0)
+            return;
+
+        commands.Add(new Command(caller, CommandType.Barrage,
+            units[bestCenter].Pos, units[bestCenter].Pos));
+        _lastBarrageTick = world.Tick;
     }
 
     private void Replan(World world)

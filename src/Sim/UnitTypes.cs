@@ -27,6 +27,8 @@ public sealed record UnitType
     /// <summary>Vision range in meters.</summary>
     public required Fixed Sight { get; init; }
     public required Weapon Weapon { get; init; }
+    /// <summary>Digging speed relative to a rifle squad (engineers dig fastest).</summary>
+    public Fixed DigSpeedMultiplier { get; init; } = Fixed.One;
 
     public override string ToString() => Name;
 }
@@ -69,7 +71,26 @@ public static class UnitTypes
         },
     };
 
-    public static readonly UnitType[] All = { RifleSquad, MachineGunSection };
+    public static readonly UnitType Engineers = new()
+    {
+        Id = 2,
+        Name = "Engineers",
+        MaxHp = Fixed.FromInt(400),
+        Speed = Fixed.FromRatio(30, 10),
+        Sight = Fixed.FromInt(32),
+        DigSpeedMultiplier = Fixed.FromInt(3),
+        Weapon = new Weapon
+        {
+            Range = Fixed.FromInt(20),
+            CooldownTicks = 36,
+            Accuracy = Fixed.FromRatio(25, 100),
+            Damage = Fixed.FromInt(15),
+            SuppressionPerHit = Fixed.FromInt(6),
+            SuppressionPerNearMiss = Fixed.FromRatio(2, 1),
+        },
+    };
+
+    public static readonly UnitType[] All = { RifleSquad, MachineGunSection, Engineers };
 
     public static UnitType Get(int id) => All[id];
 }

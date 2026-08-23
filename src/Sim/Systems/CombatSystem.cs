@@ -39,7 +39,7 @@ public static class CombatSystem
             Weapon weapon = u.Type.Weapon;
 
             bool inRange = distSq <= weapon.Range * weapon.Range;
-            bool losClear = LineOfSight.Clear(world.Map, u.Pos, target.Pos);
+            bool losClear = LineOfSight.Clear(world, u.Pos, target.Pos);
 
             if (!inRange || !losClear)
             {
@@ -83,7 +83,7 @@ public static class CombatSystem
 
             long dSq = shooter.Pos.DistanceSquaredTo(t.Pos).Raw;
             if (dSq >= bestDistSq || dSq > sightSqRaw.Raw) continue;
-            if (!LineOfSight.Clear(world.Map, shooter.Pos, t.Pos)) continue;
+            if (!LineOfSight.Clear(world, shooter.Pos, t.Pos)) continue;
 
             best = j;
             bestDistSq = dSq;
@@ -102,7 +102,7 @@ public static class CombatSystem
             * (Fixed.One + SimConfig.AccuracyBonusPerRank(shooter.Rank));
 
         // Cover of the target: the best (smallest) multiplier among overlapping cover objects applies.
-        bool inCover = TryGetBestCover(world.Map, target.Pos, out CoverKind coverKind);
+        bool inCover = TryGetBestCover(world, target.Pos, out CoverKind coverKind);
         if (inCover)
             accuracy *= SimConfig.CoverHitMultiplier(coverKind);
 
@@ -143,13 +143,20 @@ public static class CombatSystem
         }
     }
 
-    public static bool TryGetBestCover(MapDef map, Fixed2 pos, out CoverKind kind)
+    public static bool TryGetBestCover(World world, Fixed2 pos, out CoverKind kind)
     {
         kind = default;
         bool found = false;
         long bestHitMultRaw = long.MaxValue;
 
-        var cover = map.Cover;
+        // Static map cover plus everything the battle created (craters, trenches, rubble).
+        return ScanCover(world.Map.Cover, pos, ref kind, ref found, ref bestHitMultRaw)
+            | ScanCover(world.DynamicCover, pos, ref kind, ref found, ref bestHitMultRaw);
+    }
+
+    private static bool ScanCover(IReadOnlyList<CoverObject> cover, Fixed2 pos,
+        ref CoverKind kind, ref bool found, ref long bestHitMultRaw)
+    {
         for (int i = 0; i < cover.Count; i++)
         {
             var c = cover[i];

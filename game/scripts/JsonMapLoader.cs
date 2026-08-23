@@ -91,6 +91,7 @@ public static class JsonMapLoader
     {
         "mg" => UnitTypes.MachineGunSection.Id,
         "rifles" => UnitTypes.RifleSquad.Id,
+        "engineers" => UnitTypes.Engineers.Id,
         _ => throw new InvalidDataException($"unknown unit type '{type}'"),
     };
 }

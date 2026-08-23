@@ -6,6 +6,12 @@ public enum CommandType : byte
     Stop = 0,
     Move = 1,
     AttackMove = 2,
+    /// <summary>Call an artillery barrage. UnitId attributes the side (any living unit of the caller);
+    /// Pos is the barrage start, Alt the walk end (Pos == Alt for a stationary strike).</summary>
+    Barrage = 3,
+    /// <summary>Dig in at current position; eventually creates a trench cover object.</summary>
+    Dig = 4,
 }
 
-public readonly record struct Command(int UnitId, CommandType Type, Fixed2 Pos);
+/// <summary>Alt carries the second point for two-point commands (barrage walk end); ignored elsewhere.</summary>
+public readonly record struct Command(int UnitId, CommandType Type, Fixed2 Pos, Fixed2 Alt = default);

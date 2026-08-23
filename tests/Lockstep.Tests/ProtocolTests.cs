@@ -40,6 +40,10 @@ public class ProtocolTests
             new(3, CommandType.AttackMove, new Fixed2(Fixed.FromInt(12), Fixed.FromRatio(-34, 100))),
             new(7, CommandType.Move, new Fixed2(Fixed.FromRaw(long.MaxValue), Fixed.Zero)),
             new(0, CommandType.Stop, Fixed2.Zero),
+            new(9, CommandType.Barrage,
+                new Fixed2(Fixed.FromInt(40), Fixed.FromInt(32)),
+                new Fixed2(Fixed.FromInt(55), Fixed.FromInt(32))),
+            new(4, CommandType.Dig, new Fixed2(Fixed.FromInt(8), Fixed.FromInt(8))),
         };
         var bytes = Protocol.EncodeFrame(tick: 424242, commands);
 

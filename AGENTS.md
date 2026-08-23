@@ -17,7 +17,7 @@ Two peers run the same seed and input log and must agree bit-for-bit, verified b
 - Randomness comes **only** from `World.Rng` (PCG32). Never `System.Random`, never time, never GUIDs inside the sim.
 - Iterate collections in index order; never rely on `Dictionary` enumeration order without sorting first.
 - Added any state field? Add it to `World.StateHash()` **and** bump `Hasher.Salt`. Events stay excluded from hashing.
-- Tick pipeline order (commands → movement → combat → suppression → capture → victory) is part of the contract. Changing order changes hashes everywhere.
+- Tick pipeline order (commands → movement → dig → artillery → combat → suppression → capture → victory) is part of the contract. Changing order changes hashes everywhere.
 - Networked matches: both peers construct **identical worlds from `MapDef.Spawns`**. Never spawn units asymmetrically on one peer; the joiner's world gets rebuilt during seed adoption and anything spawned outside the map silently vanishes.
 - Player commands are merged via `CanonicalMerge` so both peers apply identical sequences regardless of who sent first. New command types must be reflected in its total ordering.
 

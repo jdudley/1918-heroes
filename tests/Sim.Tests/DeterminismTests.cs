@@ -31,6 +31,19 @@ public class DeterminismTests
                         new Fixed2(Fixed.FromInt(x), Fixed.FromInt(y))));
                 }
             }
+            if (tick % 240 == 0)
+            {
+                // Barrage toward the middle + a dig order: exercise the artillery
+                // state machine inside the determinism net.
+                var caller = units.FirstOrDefault(u => u.Alive);
+                if (caller.Id != 0 || caller.Alive)
+                    frame.Add(new Command(caller.Id, CommandType.Barrage,
+                        new Fixed2(TestWorlds.M(44), TestWorlds.M(30)),
+                        new Fixed2(TestWorlds.M(52), TestWorlds.M(34))));
+                var digger = units.FirstOrDefault(u => u.Alive && u.Id != caller.Id);
+                if (digger.Id != 0 || digger.Alive)
+                    frame.Add(new Command(digger.Id, CommandType.Dig, digger.Pos));
+            }
             log.Add(frame);
         }
         return log;

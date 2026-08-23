@@ -32,6 +32,23 @@ public struct MatchState
     public bool Finished;
     public Side Winner;
 
+    /// <summary>Tick at which the side may call its next barrage (Tick >= value means ready).</summary>
+    public int NextBarrageTickAllies;
+    public int NextBarrageTickCentral;
+
+    public int NextBarrageTick(Side side) => side switch
+    {
+        Side.Allies => NextBarrageTickAllies,
+        Side.Central => NextBarrageTickCentral,
+        _ => int.MaxValue,
+    };
+
+    public void SetNextBarrageTick(Side side, int tick)
+    {
+        if (side == Side.Allies) NextBarrageTickAllies = tick;
+        else if (side == Side.Central) NextBarrageTickCentral = tick;
+    }
+
     public int Remaining(Side side) => side switch
     {
         Side.Allies => TicketsAllies,

@@ -48,6 +48,26 @@ public static class SimConfig
     // --- Targeting ---
     public const int RetargetIntervalTicks = 6;
 
+    // --- Artillery ---
+    public const int ShellsPerBarrage = 8;
+    public const int BarrageImpactIntervalTicks = 12;
+    /// <summary>Meters between successive shells of a creeping barrage (start -> end walk).</summary>
+    public static readonly Fixed CreepStepMeters = Fixed.FromRatio(3, 1);
+    /// <summary>Impacts scatter uniformly within this radius of their scheduled point.</summary>
+    public static readonly Fixed ScatterRadius = Fixed.FromInt(3);
+    public static readonly Fixed BlastRadius = Fixed.FromInt(6);
+    public static readonly Fixed ShellDamage = Fixed.FromInt(45);
+    public static readonly Fixed ShellSuppression = Fixed.FromInt(35);
+    public static readonly Fixed CraterRadius = Fixed.FromRatio(11, 5);
+    public const int MaxDynamicCoverObjects = 240;
+    /// <summary>Barrage cooldown per side, in ticks.</summary>
+    public const int BarrageCooldownTicks = 30 * 45;
+
+    // --- Digging ---
+    /// <summary>Seconds of uninterrupted digging to complete one trench segment.</summary>
+    public static readonly Fixed DigSeconds = Fixed.FromInt(10);
+    public static readonly Fixed TrenchRadius = Fixed.FromRatio(5, 2);
+
     // --- Cover: hit-chance and suppression-gain multipliers when the target is in cover ---
     public static Fixed CoverHitMultiplier(CoverKind kind) => kind switch
     {

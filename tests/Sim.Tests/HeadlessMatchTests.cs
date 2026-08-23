@@ -42,12 +42,12 @@ public class HeadlessMatchTests
     };
 
     private static (World world, RudimentaryAi allies, RudimentaryAi central) RunMatch(
-        ulong seed, int ticks, out int shotsFired)
+        ulong seed, int ticks, out int loudEvents)
     {
         var world = new World(BattleMap(), seed);
         var alliesAi = new RudimentaryAi(Side.Allies);
         var centralAi = new RudimentaryAi(Side.Central);
-        shotsFired = 0;
+        loudEvents = 0;
 
         for (int t = 0; t < ticks && !world.Match.Finished; t++)
         {
@@ -59,7 +59,7 @@ public class HeadlessMatchTests
             combined.AddRange(centralCommands);
 
             world.Step(combined);
-            shotsFired += world.Events.Count;
+            loudEvents += world.Events.Count + world.Explosions.Count;
         }
         return (world, alliesAi, centralAi);
     }
@@ -67,9 +67,11 @@ public class HeadlessMatchTests
     [Fact]
     public void AiVsAi_ProducesARealBattle()
     {
-        var (world, _, _) = RunMatch(seed: 20260822, ticks: 5400, out int shots);
+        var (world, _, _) = RunMatch(seed: 20260822, ticks: 5400, out int loudEvents);
 
-        Assert.True(shots > 500, $"expected a real firefight, saw {shots} shots");
+        // Artillery ends fights faster now, so fewer rifle volleys accumulate
+        // before a verdict - count shell impacts alongside bullets.
+        Assert.True(loudEvents > 250, $"expected a real firefight, saw {loudEvents} shots+blasts");
         Assert.True(world.Units.Any(u => !u.Alive), "expected casualties");
         Assert.True(world.Points.Any(p => p.Owner != Side.Neutral) || world.Match.TicketsAllies < 500,
             "territory or tickets should have moved");

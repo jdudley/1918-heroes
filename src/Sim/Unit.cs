@@ -8,6 +8,8 @@ public enum OrderKind : byte
     Move = 1,
     /// <summary>Advance to the goal, engaging anything that comes into range.</summary>
     AttackMove = 2,
+    /// <summary>Standing fast, digging a trench at the current position.</summary>
+    Digging = 3,
 }
 
 /// <summary>
@@ -37,6 +39,8 @@ public struct Unit
     public int TargetId;
 
     public int FireCooldownTicks;
+    /// <summary>Accumulated digging work while Order == Digging.</summary>
+    public Fixed DigWork;
     public bool Alive;
 
     public readonly UnitType Type => UnitTypes.Get(TypeId);
