@@ -28,12 +28,31 @@ public partial class RtsCamera : Camera3D
 
     private bool _grabbing;
     private Vector2 _grabLast;
-    private Vector2 _grabCenterAtStart;
+
+    /// <summary>True while a ground drag-pan is active (SelectionController decides when).</summary>
+    public bool DragPanning { get; private set; }
+
+    public void DragPanBegin(Vector2 screen)
+    {
+        DragPanning = true;
+        _grabbing = false;
+        _grabLast = screen;
+    }
+
+    public void DragPanMove(Vector2 screen)
+    {
+        if (!DragPanning) return;
+        var rel = screen - _grabLast;
+        _grabLast = screen;
+        GrabPan(rel);
+    }
+
+    public void DragPanEnd() => DragPanning = false;
     /// <summary>Wheel notches accumulated; consumed at a capped per-second rate.</summary>
     private float _pendingZoomSteps;
-    private const float MaxZoomNotchesPerSecond = 11f;
+    private const float MaxZoomNotchesPerSecond = 40f;
     /// <summary>Pan-gesture units per zoom notch (tuned on-device).</summary>
-    private const float PanGestureToNotches = 2.2f;
+    private const float PanGestureToNotches = 3.0f;
     /// <summary>Toggled with N when system natural-scrolling feels backwards.</summary>
     private bool _zoomInvert;
 
@@ -126,9 +145,8 @@ public partial class RtsCamera : Camera3D
             case InputEventMouseButton { ButtonIndex: MouseButton.Middle } mmb:
                 _grabbing = mmb.Pressed;
                 _grabLast = mmb.Position;
-                _grabCenterAtStart = _center;
                 break;
-            case InputEventMouseMotion mm when _grabbing || Input.IsKeyPressed(Key.Space):
+            case InputEventMouseMotion mm when _grabbing || (!DragPanning && Input.IsKeyPressed(Key.Space)):
                 // Middle-drag or Space+drag: the trackpad-friendly grab pan.
                 GrabPan(mm.Relative);
                 break;
@@ -216,7 +234,7 @@ public partial class RtsCamera : Camera3D
     private void SmoothZoom(double dt)
     {
         // Exponential approach: fast when far off, settles gently.
-        float blend = 1f - Mathf.Exp(-12f * (float)dt);
+        float blend = 1f - Mathf.Exp(-18f * (float)dt);
         _dist = Mathf.Lerp(_dist, _distTarget, blend);
     }
 
