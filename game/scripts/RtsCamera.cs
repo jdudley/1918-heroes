@@ -32,6 +32,10 @@ public partial class RtsCamera : Camera3D
     /// <summary>Wheel notches accumulated; consumed at a capped per-second rate.</summary>
     private float _pendingZoomSteps;
     private const float MaxZoomNotchesPerSecond = 11f;
+    /// <summary>Pan-gesture units per zoom notch (tuned on-device).</summary>
+    private const float PanGestureToNotches = 2.2f;
+    /// <summary>Toggled with N when system natural-scrolling feels backwards.</summary>
+    private bool _zoomInvert;
 
     public void Setup(float mapWidth, float mapHeight)
     {
@@ -65,10 +69,25 @@ public partial class RtsCamera : Camera3D
         Apply();
     }
 
+    private static readonly bool _inputDebug =
+        System.Environment.GetEnvironmentVariable("INPUT_DEBUG") == "1";
+
+    private static string Describe(InputEvent e) => e switch
+    {
+        InputEventMouseButton mb => $"btn={mb.ButtonIndex} pressed={mb.Pressed} factor={mb.Factor}",
+        InputEventPanGesture pg => $"pan delta={pg.Delta}",
+        InputEventMagnifyGesture mg => $"magnify factor={mg.Factor}",
+        InputEventKey k => $"key={k.Keycode} pressed={k.Pressed}",
+        _ => "",
+    };
+
     // ------------------------------------------------------------ input events
 
     public override void _UnhandledInput(InputEvent @event)
     {
+        if (_inputDebug && @event is InputEventMouseButton or InputEventPanGesture or InputEventMagnifyGesture or InputEventKey)
+            GD.Print($"[input] {@event.GetClass()} {Describe(@event)}");
+
         switch (@event)
         {
             // macOS reports Factor=0 for trackpad scrolls, so ignore it: every
@@ -79,6 +98,24 @@ public partial class RtsCamera : Camera3D
                 break;
             case InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.WheelDown }:
                 _pendingZoomSteps += 1f;
+                break;
+
+            // macOS delivers two-finger trackpad scroll as a PAN GESTURE,
+            // never as wheel buttons (Godot issue #105925).
+            case InputEventPanGesture pan:
+                float steps = pan.Delta.Y * PanGestureToNotches * (_zoomInvert ? -1f : 1f);
+                _pendingZoomSteps += steps;
+                break;
+
+            // Bonus: pinch to zoom, where supported.
+            case InputEventMagnifyGesture mag when mag.Factor > 0.05f:
+                float f = Mathf.Clamp(mag.Factor, 0.85f, 1.18f);
+                _distTarget = Mathf.Clamp(_distTarget / f, MinDist, MaxDist);
+                break;
+
+            case InputEventKey { Pressed: true, Keycode: Key.N }:
+                _zoomInvert = !_zoomInvert;
+                GD.Print($"zoom invert: {_zoomInvert}");
                 break;
             case InputEventKey { Pressed: true, Keycode: Key.Equal }:
                 _pendingZoomSteps -= 1f;
