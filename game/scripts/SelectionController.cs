@@ -177,6 +177,8 @@ public partial class SelectionController : Node3D
         if (ground is null)
             return;
 
+        _main.SpawnOrderMarker(ground.Value);
+
         var world = _main.World;
         foreach (int id in _selected)
         {

@@ -47,6 +47,8 @@ public partial class Main : Node3D
     private readonly Dictionary<int, MeshInstance3D> _cloudMeshes = new();
 
     private readonly List<(MeshInstance3D Node, float Ttl)> _flashes = new();
+    private readonly List<(MeshInstance3D Node, float Ttl)> _tracers = new();
+    private readonly List<(MeshInstance3D Node, float Ttl)> _markers = new();
     private int _seenDynamicCover;
     private readonly List<MeshInstance3D> _blockerMeshes = new();
 
@@ -258,6 +260,7 @@ public partial class Main : Node3D
 
             case AppMode.Match:
                 TickMatch(delta);
+                TickTransientFx(delta);
                 if (_testMode is not null)
                     RunTestChecks();
                 break;
@@ -363,6 +366,30 @@ public partial class Main : Node3D
         };
         AddChild(ground);
 
+        // Terrain scatter: breaks up the flat plane so motion reads at RTS height.
+        var rng = new Random(1918);
+        for (int i = 0; i < 260; i++)
+        {
+            float x = (float)(rng.NextDouble() * w);
+            float z = (float)(rng.NextDouble() * h);
+            float r = 0.25f + (float)rng.NextDouble() * 0.85f;
+            float shade = 0.24f + (float)rng.NextDouble() * 0.10f;
+            bool grass = rng.NextDouble() > 0.25;
+            var patch = new MeshInstance3D
+            {
+                Mesh = new CylinderMesh { TopRadius = r, BottomRadius = r * 1.1f, Height = 0.04f },
+                MaterialOverride = new StandardMaterial3D
+                {
+                    AlbedoColor = grass
+                        ? new Color(shade * 0.8f, shade * 1.15f, shade * 0.6f)
+                        : new Color(shade * 1.1f, shade * 0.95f, shade * 0.7f),
+                    Roughness = 1f,
+                },
+                Position = new Vector3(x, -0.01f, z),
+            };
+            AddChild(patch);
+        }
+
         // Sight blockers as crude buildings.
         var buildingMat = new StandardMaterial3D { AlbedoColor = new Color(0.45f, 0.38f, 0.32f) };
         foreach (var ob in map.SightBlockers)
@@ -420,15 +447,20 @@ public partial class Main : Node3D
         UnitViews.Clear();
 
         for (int i = 0; i < _world.Units.Count; i++)
-        {
-            var u = _world.Units[i];
-            var view = new UnitView();
-            AddChild(view);
-            view.UnitId = i;
-            view.Init(u.Side);
-            view.Rebind(_world);
-            UnitViews[i] = view;
-        }
+            SpawnViewFor(i);
+    }
+
+    private void SpawnViewFor(int index)
+    {
+        var world = World;
+        var u = world.Units[index];
+        var view = new UnitView();
+        AddChild(view);
+        view.UnitId = index;
+        view.Init(u.Side, u.TypeId, world.FactionOf(u.Side).Id);
+        view.EnsureSelectionRing();
+        view.Rebind(world);
+        UnitViews[index] = view;
     }
 
     private void OnWorldReplaced(World newWorld)
@@ -607,23 +639,6 @@ public partial class Main : Node3D
         foreach (var pos in world.Explosions)
             SpawnFlash(pos);
 
-        for (int i = _flashes.Count - 1; i >= 0; i--)
-        {
-            var (node, ttl) = _flashes[i];
-            ttl -= 1f / 60f;
-            if (ttl <= 0)
-            {
-                node.QueueFree();
-                _flashes.RemoveAt(i);
-            }
-            else
-            {
-                float growth = 1f + (0.35f - ttl) * 5f;
-                node.Scale = new Vector3(growth, growth * 0.6f, growth);
-                node.MaterialOverride!.Set("albedo_color",
-                    new Color(1f, 0.7f - 0.4f * (0.35f - ttl), 0.25f));
-            }
-        }
 
         // New craters / trenches / rubble.
         var cover = world.DynamicCover;
@@ -671,6 +686,99 @@ public partial class Main : Node3D
             MaterialOverride = new StandardMaterial3D { AlbedoColor = color, Roughness = 1f },
             Position = UnitView.ToGodot(c.Pos) with { Y = 0.03f },
         };
+    }
+
+    /// <summary>Thin bright line from shooter to target for one tick's shots.</summary>
+    private void ConsumeShotTracers(World world)
+    {
+        foreach (var e in world.Events)
+        {
+            if (e.ShooterId >= world.Units.Count || e.TargetId >= world.Units.Count)
+                continue;
+            var from = UnitView.ToGodot(world.Units[e.ShooterId].Pos) with { Y = 1.1f };
+            var to = UnitView.ToGodot(world.Units[e.TargetId].Pos) with { Y = 1.0f };
+            if (from.DistanceTo(to) < 0.5f)
+                continue;
+
+            var mesh = new ImmediateMesh();
+            mesh.SurfaceBegin(Mesh.PrimitiveType.Lines);
+            mesh.SurfaceAddVertex(from);
+            mesh.SurfaceAddVertex(to);
+            mesh.SurfaceEnd();
+
+            var node = new MeshInstance3D
+            {
+                Mesh = mesh,
+                MaterialOverride = new StandardMaterial3D
+                {
+                    AlbedoColor = e.Hit ? new Color(1f, 0.9f, 0.45f) : new Color(0.8f, 0.8f, 0.95f),
+                    ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+                },
+            };
+            AddChild(node);
+            _tracers.Add((node, 0.09f));
+        }
+    }
+
+    public void SpawnOrderMarker(Fixed2 ground)
+    {
+        var node = new MeshInstance3D
+        {
+            Mesh = new TorusMesh { InnerRadius = 0.75f, OuterRadius = 1.0f },
+            MaterialOverride = new StandardMaterial3D
+            {
+                AlbedoColor = new Color(0.4f, 1f, 0.5f),
+                ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+            },
+            Position = UnitView.ToGodot(ground) with { Y = 0.1f },
+            Scale = new Vector3(1, 0.15f, 1),
+        };
+        AddChild(node);
+        _markers.Add((node, 0.55f));
+    }
+
+    private void TickTransientFx(double delta)
+    {
+        void Decay(List<(MeshInstance3D Node, float Ttl)> list, double d, float life)
+        {
+            for (int i = list.Count - 1; i >= 0; i--)
+            {
+                var (node, ttl) = list[i];
+                ttl -= (float)d;
+                if (ttl <= 0)
+                {
+                    node.QueueFree();
+                    list.RemoveAt(i);
+                }
+                else
+                {
+                    list[i] = (node, ttl);
+                    float k = ttl / life;
+                    node.Transparency = 1f - k;
+                }
+            }
+        }
+
+        Decay(_tracers, delta, 0.09f);
+        Decay(_markers, delta, 0.55f);
+
+        for (int i = _flashes.Count - 1; i >= 0; i--)
+        {
+            var (node, ttl) = _flashes[i];
+            ttl -= (float)delta;
+            if (ttl <= 0)
+            {
+                node.QueueFree();
+                _flashes.RemoveAt(i);
+            }
+            else
+            {
+                _flashes[i] = (node, ttl);
+                float growth = 1f + (0.35f - ttl) * 5f;
+                node.Scale = new Vector3(growth, growth * 0.6f, growth);
+                node.Transparency = 1f - ttl / 0.35f;
+            }
+        }
     }
 
     private void SpawnFlash(Fixed2 simPos)
@@ -807,15 +915,7 @@ public partial class Main : Node3D
 
         // Reinforcements arrive mid-battle; give them puppets (ids are sequential).
         for (int i = UnitViews.Count; i < World.Units.Count; i++)
-        {
-            var nu = World.Units[i];
-            var nv = new UnitView { UnitId = i };
-            AddChild(nv);
-            nv.Init(nu.Side);
-            nv.Rebind(World);
-            nv.PrevPos = nv.CurPos = UnitView.ToGodot(nu.Pos);
-            UnitViews[i] = nv;
-        }
+            SpawnViewFor(i);
 
         if (worldChanged)
         {
@@ -841,6 +941,7 @@ public partial class Main : Node3D
         for (int i = 0; i < _pointViews.Count && i < _world.Points.Count; i++)
             _pointViews[i].Sync(_world.Points[i]);
 
+        ConsumeShotTracers(World);
         SyncBattlefield(World);
         SyncGasClouds(World);
 
