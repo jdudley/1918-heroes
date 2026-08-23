@@ -24,6 +24,9 @@ public partial class SelectionController : Node3D
     private Vector2 _dragStart;
     private Vector2 _dragCur;
 
+    // Control groups: Ctrl+F1..F3 assign, F1..F3 recall.
+    private readonly Dictionary<int, List<int>> _groups = new();
+
     public int SelectedCount => _selected.Count;
     public bool IsSelected(int id) => _selected.Contains(id);
 
@@ -81,6 +84,15 @@ public partial class SelectionController : Node3D
             case InputEventKey { Pressed: true, Keycode: var k }
                 when k is Key.Key1 or Key.Key2 or Key.Key3 or Key.Key4 or Key.Key5 or Key.Key6:
                 _main.TryRequisitionHotkey((int)(k - Key.Key1));
+                break;
+
+            case InputEventKey { Pressed: true, Keycode: var fk }
+                when fk is Key.F1 or Key.F2 or Key.F3:
+                int g = (int)(fk - Key.F1);
+                if (Input.IsKeyPressed(Key.Ctrl))
+                    _groups[g] = _selected.ToList();
+                else
+                    RecallGroup(g);
                 break;
         }
     }
@@ -165,11 +177,43 @@ public partial class SelectionController : Node3D
 
         if (best >= 0)
         {
+            ulong now = Time.GetTicksMsec();
+            var clickedType = _main.World.Units[best].TypeId;
+
+            // Double-click: grab every living squad of the same type.
+            if (_lastClickType == clickedType && now - _lastClickMs < 350)
+            {
+                var all = _main.World.Units;
+                for (int i = 0; i < all.Count; i++)
+                    if (all[i].Alive && all[i].Side == _main.MySide &&
+                        all[i].TypeId == clickedType)
+                        _selected.Add(i);
+                _lastClickMs = 0;
+                return;
+            }
+
+            _lastClickMs = now;
+            _lastClickType = clickedType;
+
             if (Input.IsKeyPressed(Key.Shift) && _selected.Contains(best))
                 _selected.Remove(best);
             else
                 _selected.Add(best);
         }
+    }
+
+    private ulong _lastClickMs;
+    private int _lastClickType = -1;
+
+    private void RecallGroup(int index)
+    {
+        if (!_groups.TryGetValue(index, out var ids))
+            return;
+
+        ClearSelection();
+        foreach (int id in ids.Where(i => i < _main.World.Units.Count && _main.World.Units[i].Alive))
+            _selected.Add(id);
+        RefreshRings();
     }
 
     private void IssueAttackMove(Vector2 screenPos)

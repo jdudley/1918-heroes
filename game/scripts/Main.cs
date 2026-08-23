@@ -36,6 +36,7 @@ public partial class Main : Node3D
     private RtsCamera _camera = null!;
     private SelectionController _selection = null!;
     private Hud _hud = null!;
+    private MiniMap? _minimap;
     private List<CapturePointView> _pointViews = new();
 
     // --- barrage / gas targeting ---
@@ -187,6 +188,7 @@ public partial class Main : Node3D
         {
             Text = "CAMERA  arrows/WASD pan · screen edges pan · two-finger scroll zooms · Space+drag pans\n                    Q/E rotate · +/- zoom · MMB drag\n" +
                    "ORDERS  LMB select / drag-box · RMB attack-move · Shift adds to selection\n" +
+                   "GROUPS  Ctrl+F1-F3 assign · F1-F3 recall · double-click selects all of a type\n" +
                    "SUPPORT B barrage (two clicks) · G gas · keys 1-6 requisition squads\n",
             HorizontalAlignment = HorizontalAlignment.Center,
             Modulate = new Color(1f, 1f, 1f, 0.55f),
@@ -447,6 +449,20 @@ public partial class Main : Node3D
 
         _hud = new Hud();
         AddChild(_hud);
+
+        _minimap = new MiniMap();
+        _minimap.SetMapSize(w, h);
+        _minimap.ViewFootprint = () => _camera.ViewFootprint();
+        _minimap.JumpRequested = (x, z) => _camera?.SetCenter(new Vector2(x, z));
+        var mmLayer = new CanvasLayer { Layer = 4 };
+        var mmMargin = new MarginContainer
+        {
+            AnchorLeft = 0, AnchorBottom = 1, AnchorTop = 1, AnchorRight = 0,
+            OffsetLeft = 14, OffsetBottom = -14,
+        };
+        mmLayer.AddChild(mmMargin);
+        mmMargin.AddChild(_minimap);
+        AddChild(mmLayer);
 
         _selection = new SelectionController();
         AddChild(_selection);
@@ -961,6 +977,12 @@ public partial class Main : Node3D
         SyncGasClouds(World);
 
         SyncGasClouds(World);
+
+        if (_minimap is not null)
+        {
+            _minimap.World = World;
+            _minimap.QueueRedraw();
+        }
 
         string barrageStatus = BarrageStatusText(World);
         string gasStatus = GasStatusText(World);

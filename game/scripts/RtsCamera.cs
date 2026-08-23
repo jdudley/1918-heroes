@@ -56,6 +56,46 @@ public partial class RtsCamera : Camera3D
     /// <summary>Toggled with N when system natural-scrolling feels backwards.</summary>
     private bool _zoomInvert;
 
+    /// <summary>Teleport the focus point (minimap jumps).</summary>
+    public void SetCenter(Vector2 center)
+    {
+        _center = center;
+        ClampCenter();
+        Apply();
+    }
+
+    private Vector2? GroundPointAt(Vector2 screen)
+    {
+        var origin = ProjectRayOrigin(screen);
+        var dir = ProjectRayNormal(screen);
+        if (Mathf.Abs(dir.Y) < 1e-5f)
+            return null;
+        float t = -origin.Y / dir.Y;
+        if (t < 0)
+            return null;
+        var hit = origin + dir * t;
+        return new Vector2(hit.X, hit.Z);
+    }
+
+    /// <summary>Screen corners projected onto the ground plane, or null if any ray misses.</summary>
+    public Vector2[]? ViewFootprint()
+    {
+        var size = GetViewport().GetVisibleRect().Size;
+        var pts = new List<Vector2>();
+        foreach (var corner in new[]
+                 {
+                     new Vector2(0, 0), new Vector2(size.X, 0),
+                     new Vector2(size.X, size.Y), new Vector2(0, size.Y),
+                 })
+        {
+            var g = GroundPointAt(corner);
+            if (g is null)
+                return null;
+            pts.Add(g.Value);
+        }
+        return pts.ToArray();
+    }
+
     public void Setup(float mapWidth, float mapHeight)
     {
         _mapW = mapWidth;
