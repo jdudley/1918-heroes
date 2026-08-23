@@ -36,6 +36,7 @@ public sealed class RudimentaryAi
         {
             Replan(world);
             TryBarrage(world, commands);
+            TryPurchase(world, commands);
         }
 
         // Re-issue goals for living units whose squads went idle off-target
@@ -65,6 +66,49 @@ public sealed class RudimentaryAi
                 commands.Add(new Command(u.Id, CommandType.AttackMove, goal));
         }
         return commands;
+    }
+
+    /// <summary>
+    /// Spend manpower to keep the field strength up. Buys the most expensive
+    /// affordable infantry first; armor only when flush. The sim validates roster
+    /// and funds authoritatively.
+    /// </summary>
+    private void TryPurchase(World world, List<Command> commands)
+    {
+        const int fieldCap = 12;
+        var units = world.Units;
+        int aliveOwn = 0;
+        for (int i = 0; i < units.Count; i++)
+            if (units[i].Alive && units[i].Side == _side)
+                aliveOwn++;
+
+        if (aliveOwn >= fieldCap || commands.Count == 0 && _lastBarrageTick < 0 && world.Tick == 0)
+            return;
+
+        int caller = -1;
+        for (int i = 0; i < units.Count && caller < 0; i++)
+            if (units[i].Alive && units[i].Side == _side)
+                caller = i;
+        if (caller < 0)
+            return;
+
+        var faction = world.FactionOf(_side);
+        int manpower = world.Match.Manpower(_side);
+
+        // Preference order: infantry core, support, armor when rich.
+        foreach (int typeId in faction.Roster)
+        {
+            var t = UnitTypes.Get(typeId);
+            bool isInfantry = t.DigSpeedMultiplier > Fixed.Zero && !t.Name.Contains("Tank");
+            bool affordable = manpower >= t.ManpowerCost;
+            bool wantIt = isInfantry || manpower >= t.ManpowerCost * 3;
+
+            if (affordable && wantIt)
+            {
+                commands.Add(new Command(caller, CommandType.Requisition, default, default, typeId));
+                return; // one purchase per replan keeps the field growing steadily
+            }
+        }
     }
 
     /// <summary>

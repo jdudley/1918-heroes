@@ -31,7 +31,8 @@ public static class GasSystem
                     continue;
 
                 unit.Hp -= damage;
-                unit.Suppression = Fixed.Clamp(unit.Suppression + suppression,
+                var gained = suppression * unit.Type.SuppressionTakenMultiplier;
+                unit.Suppression = Fixed.Clamp(unit.Suppression + gained,
                     Fixed.Zero, SimConfig.MaxSuppression);
 
                 if (unit.Hp <= Fixed.Zero)

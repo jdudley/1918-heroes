@@ -64,6 +64,10 @@ public partial class Main : Node3D
     private LineEdit _portEdit = null!;
     private LineEdit _ipEdit = null!;
     private Label _menuStatus = null!;
+    private int _alliesFactionIdx;   // index into Factions.All (default BEF)
+    private int _centralFactionIdx = 2; // default German Empire
+    private Button _alliesFactionButton = null!;
+    private Button _centralFactionButton = null!;
 
     public World World => _session?.World ?? _world;
     public Side MySide => _mySide;
@@ -133,6 +137,28 @@ public partial class Main : Node3D
 
         panel.AddChild(new Control { CustomMinimumSize = new Vector2(0, 24) });
 
+        var alliesRow = new HBoxContainer();
+        alliesRow.AddChild(new Label { Text = "Allies kit ", Modulate = new Color(1, 1, 1, 0.7f) });
+        _alliesFactionButton = MenuButton(FactionName(_alliesFactionIdx), () =>
+        {
+            _alliesFactionIdx = (_alliesFactionIdx + 1) % Sim.Factions.All.Length;
+            _alliesFactionButton.Text = FactionName(_alliesFactionIdx);
+        });
+        alliesRow.AddChild(_alliesFactionButton);
+        panel.AddChild(alliesRow);
+
+        var centralRow = new HBoxContainer();
+        centralRow.AddChild(new Label { Text = "Central kit ", Modulate = new Color(1, 1, 1, 0.7f) });
+        _centralFactionButton = MenuButton(FactionName(_centralFactionIdx), () =>
+        {
+            _centralFactionIdx = (_centralFactionIdx + 1) % Sim.Factions.All.Length;
+            _centralFactionButton.Text = FactionName(_centralFactionIdx);
+        });
+        centralRow.AddChild(_centralFactionButton);
+        panel.AddChild(centralRow);
+
+        panel.AddChild(new Control { CustomMinimumSize = new Vector2(0, 12) });
+
         panel.AddChild(MenuButton("Solo vs AI", () => StartMatch(networked: false, hosting: false)));
         panel.AddChild(new Control { CustomMinimumSize = new Vector2(0, 6) });
 
@@ -161,6 +187,15 @@ public partial class Main : Node3D
         };
         panel.AddChild(_menuStatus);
     }
+
+    private static string FactionName(int idx) => $"[{Sim.Factions.All[idx].Name}]";
+
+    /// <summary>Factions for the local setup screen; joiners adopt the host's instead.</summary>
+    internal Sim.MatchOptions OptionsFromMenu() => new()
+    {
+        FactionAllies = (Sim.FactionId)_alliesFactionIdx,
+        FactionCentral = (Sim.FactionId)_centralFactionIdx,
+    };
 
     private Button MenuButton(string text, Action onPressed)
     {
@@ -257,7 +292,22 @@ public partial class Main : Node3D
         ulong seed = hosting || !networked ? RandomSeed() : 0; // joiner adopts host seed anyway
 
         var map = JsonMapLoader.Load(MapPath);
-        _world = new World(map, seed, options ?? TestOptions());
+        var matchOptions = options;
+        if (matchOptions is null)
+        {
+            matchOptions = new Sim.MatchOptions
+            {
+                FactionAllies = (Sim.FactionId)_alliesFactionIdx,
+                FactionCentral = (Sim.FactionId)_centralFactionIdx,
+            };
+            if (_testMode is not null)
+                matchOptions = TestOptions() with
+                {
+                    FactionAllies = matchOptions.FactionAllies,
+                    FactionCentral = matchOptions.FactionCentral,
+                };
+        }
+        _world = new World(map, seed, matchOptions);
 
         _mySide = networked && !hosting ? Side.Central : Side.Allies;
         _soloMode = !networked;
@@ -270,7 +320,7 @@ public partial class Main : Node3D
         }
         else
         {
-            _session = new LockstepSession(_world, _tcp!, inputDelayTicks: 4);
+            _session = new LockstepSession(_world, _tcp!, inputDelayTicks: 4, matchOptions);
             if (!hosting)
             {
                 _session.AdoptPeerSeed = true;
@@ -414,6 +464,18 @@ public partial class Main : Node3D
         GasArmed = false;
         if (_gasMarker is not null)
             _gasMarker.Visible = false;
+    }
+
+    /// <summary>Buy the Nth entry of your faction's roster (hotkeys 1..N).</summary>
+    public void TryRequisitionHotkey(int rosterIndex)
+    {
+        var roster = World.FactionOf(MySide).Roster;
+        if (rosterIndex < 0 || rosterIndex >= roster.Length)
+            return;
+        int caller = FirstAliveOwnedUnit();
+        if (caller < 0)
+            return;
+        IssueOrder(new Command(caller, CommandType.Requisition, default, default, roster[rosterIndex]));
     }
 
     public void HandleBarrageClick(Fixed2 ground)
@@ -743,6 +805,18 @@ public partial class Main : Node3D
             _alpha = Mathf.Clamp((float)(_accumulator / TickSeconds), 0f, 1f);
         }
 
+        // Reinforcements arrive mid-battle; give them puppets (ids are sequential).
+        for (int i = UnitViews.Count; i < World.Units.Count; i++)
+        {
+            var nu = World.Units[i];
+            var nv = new UnitView { UnitId = i };
+            AddChild(nv);
+            nv.Init(nu.Side);
+            nv.Rebind(World);
+            nv.PrevPos = nv.CurPos = UnitView.ToGodot(nu.Pos);
+            UnitViews[i] = nv;
+        }
+
         if (worldChanged)
         {
             foreach (var kv in UnitViews)
@@ -772,11 +846,16 @@ public partial class Main : Node3D
 
         SyncGasClouds(World);
 
+        SyncGasClouds(World);
+
         string barrageStatus = BarrageStatusText(World);
         string gasStatus = GasStatusText(World);
         string hintPrefix = BarrageArmed ? "BARRAGE: click start then end · "
                           : GasArmed ? "GAS: click drop point · " : "";
-        _hud.SetHint($"{FlankWarnings(World)}{hintPrefix}LMB select · RMB attack-move · B barrage [{barrageStatus}] · G gas [{gasStatus}] · WASD pan · wheel zoom");
+        var roster = World.FactionOf(MySide).Roster;
+        var buy = string.Join(" ", roster
+            .Select((t, i) => $"{{{i + 1}}} {UnitTypes.Get(t).Name.Split(' ')[0]} {UnitTypes.Get(t).ManpowerCost}"));
+        _hud.SetHint($"{FlankWarnings(World)}MANPOWER {World.Match.Manpower(MySide)} · {buy}\n{hintPrefix}LMB select · RMB attack-move · B barrage [{barrageStatus}] · G gas [{gasStatus}] · WASD pan · wheel zoom");
 
         _hud.Sync(_world, _mySide);
 

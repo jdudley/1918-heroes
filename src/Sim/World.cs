@@ -38,6 +38,16 @@ public sealed class World
     public Fixed2 WindVelocity { get; private set; }
     internal int _nextGasId;
 
+    public FactionDef FactionAlliesDef { get; }
+    public FactionDef FactionCentralDef { get; }
+
+    public FactionDef FactionOf(Side side) => side switch
+    {
+        Side.Allies => FactionAlliesDef,
+        Side.Central => FactionCentralDef,
+        _ => throw new ArgumentOutOfRangeException(nameof(side)),
+    };
+
     /// <summary>Transient per-tick output. Excluded from hashing.</summary>
     public List<ShotEvent> Events = new();
     /// <summary>Shell impact positions this tick; renderer FX only. Excluded from hashing.</summary>
@@ -50,6 +60,8 @@ public sealed class World
         MatchSeed = seed;
         Rng = Rng.FromSeed(seed);
         Tick = 0;
+        FactionAlliesDef = Factions.Get(Options.FactionAllies);
+        FactionCentralDef = Factions.Get(Options.FactionCentral);
 
         foreach (var spec in map.CapturePoints)
             Points.Add(new CapturePoint
@@ -80,6 +92,8 @@ public sealed class World
             AccumCentral = Fixed.Zero,
             Finished = false,
             Winner = Side.Neutral,
+            ManpowerAllies = SimConfig.StartingManpower,
+            ManpowerCentral = SimConfig.StartingManpower,
         };
     }
 
@@ -150,6 +164,7 @@ public sealed class World
         SuppressionSystem.Step(this);
         CaptureSystem.Step(this);
         VictorySystem.Step(this);
+        EconomySystem.Step(this);
         DirectorSystem.Step(this);
     }
 
@@ -175,6 +190,12 @@ public sealed class World
         h.Mix(Match.NextBarrageTickCentral);
         h.Mix(Match.NextGasTickAllies);
         h.Mix(Match.NextGasTickCentral);
+        h.Mix(Match.ManpowerAllies);
+        h.Mix(Match.ManpowerCentral);
+        h.Mix(Match.IncomeAccumAllies.Raw);
+        h.Mix(Match.IncomeAccumCentral.Raw);
+        h.Mix(Match.RequisitionsAllies);
+        h.Mix(Match.RequisitionsCentral);
         h.Mix(WindVelocity);
 
         h.Mix(Blockers.Count);

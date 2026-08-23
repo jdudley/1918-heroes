@@ -61,8 +61,9 @@ public static class ArtillerySystem
             // Linear falloff from ground zero.
             Fixed falloff = Fixed.One - (dist / SimConfig.BlastRadius);
             u.Hp -= ShellDamageFor(u) * falloff;
+            var gained = SimConfig.ShellSuppression * falloff * u.Type.SuppressionTakenMultiplier;
             u.Suppression = Fixed.Clamp(
-                u.Suppression + SimConfig.ShellSuppression * falloff,
+                u.Suppression + gained,
                 Fixed.Zero, SimConfig.MaxSuppression);
 
             if (u.Hp <= Fixed.Zero)

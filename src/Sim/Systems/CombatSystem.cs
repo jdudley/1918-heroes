@@ -116,12 +116,15 @@ public static class CombatSystem
             supGain *= SimConfig.CoverSuppressionMultiplier(coverKind);
         supGain *= Fixed.One - SimConfig.SuppressionResistPerRank(target.Rank);
 
+        supGain *= target.Type.SuppressionTakenMultiplier;
+
         target.Suppression = Fixed.Clamp(target.Suppression + supGain, Fixed.Zero, SimConfig.MaxSuppression);
 
         if (target.Hp <= Fixed.Zero)
         {
             target.Alive = false;
             shooter.Kills++;
+            shooter.Xp += shooter.Type.VetXpPerKill;
             PromoteIfEarned(ref shooter);
         }
 
@@ -137,7 +140,7 @@ public static class CombatSystem
     private static void PromoteIfEarned(ref Unit u)
     {
         while (u.Rank < SimConfig.RankKillThresholds.Length &&
-               u.Kills >= SimConfig.RankKillThresholds[u.Rank])
+               u.Xp.Raw >= Fixed.FromInt(SimConfig.RankKillThresholds[u.Rank]).Raw)
         {
             u.Rank++;
         }

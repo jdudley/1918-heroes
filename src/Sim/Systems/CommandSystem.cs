@@ -43,10 +43,53 @@ public static class CommandSystem
                 case CommandType.Gas:
                     TryCallGas(world, ref u, cmd);
                     break;
+                case CommandType.Requisition:
+                    TryRequisition(world, ref u, cmd.Param);
+                    break;
             }
             world.Units[cmd.UnitId] = u;
         }
     }
+
+    /// <summary>
+    /// Buy a squad: validates faction roster and funds, then marches it in from
+    /// the side's home edge toward the middle of the map.
+    /// </summary>
+    private static void TryRequisition(World world, ref Unit issuer, int typeId)
+    {
+        Side side = issuer.Side;
+        if (side is not (Side.Allies or Side.Central))
+            return;
+
+        var faction = world.FactionOf(side);
+        int rosterIndex = Array.IndexOf(faction.Roster, typeId);
+        if (rosterIndex < 0)
+            return; // not in this army's kit
+
+        var type = UnitTypes.Get(typeId);
+        ref MatchState match = ref world.Match;
+        if (match.Manpower(side) < type.ManpowerCost)
+            return;
+
+        match.AddManpower(side, -type.ManpowerCost);
+
+        // March in from the home edge, staggered so squads don't stack.
+        Fixed x = side == Side.Allies ? Fixed.FromInt(3) : world.Map.Width - Fixed.FromInt(3);
+        int slot = (side == Side.Allies ? match.RequisitionsAllies : match.RequisitionsCentral) % 7;
+        var pos = new Fixed2(x, world.Map.Height / Fixed.FromInt(2) + Fixed.FromInt(slot * 5 - 15));
+
+        int id = world.Spawn(side, typeId, pos, rank: StartRankFor(faction, rosterIndex));
+        var spawned = world.Units[id];
+        spawned.Order = OrderKind.Move;
+        spawned.Goal = new Fixed2(world.Map.Width / Fixed.FromInt(2), spawned.Pos.Y);
+        world.Units[id] = spawned;
+
+        if (side == Side.Allies) match.RequisitionsAllies++;
+        else match.RequisitionsCentral++;
+    }
+
+    private static int StartRankFor(FactionDef faction, int rosterIndex) =>
+        rosterIndex < faction.StartRanks.Length ? faction.StartRanks[rosterIndex] : 0;
 
     private static void TryCallBarrage(World world, ref Unit issuer, in Command cmd)
     {
@@ -70,7 +113,11 @@ public static class CommandSystem
             NextTick = world.Tick + 15, // flight time before first shell lands
         });
 
-        match.SetNextBarrageTick(side, world.Tick + SimConfig.BarrageCooldownTicks);
+        // Faction artillery character: BEF runs its superb creeping barrages sooner.
+        int cooldown = SimConfig.BarrageCooldownTicks;
+        var factionMult = world.FactionOf(side).BarrageCooldownMultiplier;
+        cooldown = (int)((Int128)cooldown * factionMult.Raw >> Fixed.Shift);
+        match.SetNextBarrageTick(side, world.Tick + cooldown);
     }
 
     private static void TryCallGas(World world, ref Unit issuer, in Command cmd)

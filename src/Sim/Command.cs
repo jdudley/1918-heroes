@@ -13,7 +13,12 @@ public enum CommandType : byte
     Dig = 4,
     /// <summary>Call a gas barrage: drops one lingering, drifting cloud at Pos.</summary>
     Gas = 5,
+    /// <summary>Requisition a squad: Param = unit type id; marches in from the side's home edge.</summary>
+    Requisition = 6,
 }
 
-/// <summary>Alt carries the second point for two-point commands (barrage walk end); ignored elsewhere.</summary>
-public readonly record struct Command(int UnitId, CommandType Type, Fixed2 Pos, Fixed2 Alt = default);
+/// <summary>
+/// Alt carries the second point for two-point commands (barrage walk end);
+/// Param carries scalar payloads (requisition unit type). Both ignored elsewhere.
+/// </summary>
+public readonly record struct Command(int UnitId, CommandType Type, Fixed2 Pos, Fixed2 Alt = default, int Param = 0);

@@ -34,6 +34,7 @@ public sealed class LockstepSession
     private World _world;
     private readonly ITransport _transport;
     private readonly byte _inputDelayTicks;
+    private Sim.MatchOptions _options;
 
     /// <summary>
     /// When true, a seed mismatch during the handshake rebuilds this peer's world with the
@@ -75,11 +76,13 @@ public sealed class LockstepSession
     public World World => _world;
     internal int OutboundQueueLength => _nextFrameToSend - 1 - _lastExecutedTick;
 
-    public LockstepSession(World world, ITransport transport, byte inputDelayTicks = 3)
+    public LockstepSession(World world, ITransport transport, byte inputDelayTicks = 3,
+        Sim.MatchOptions? options = null)
     {
         _world = world ?? throw new ArgumentNullException(nameof(world));
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _inputDelayTicks = inputDelayTicks;
+        _options = options ?? world.Options;
         _nextFrameToSend = 1;
         _lastExecutedTick = world.Tick; // 0 for a fresh world
     }
@@ -93,7 +96,9 @@ public sealed class LockstepSession
             _world.MatchSeed,
             MapDigest.Of(_world.Map),
             _inputDelayTicks,
-            AdoptPeerSeed));
+            AdoptPeerSeed,
+            (byte)_options.FactionAllies,
+            (byte)_options.FactionCentral));
         _transport.Send(hello);
     }
 
@@ -181,10 +186,16 @@ public sealed class LockstepSession
         if (seedMismatch)
         {
             // Exactly one side may adopt: the peer that declared WillAdoptSeed rebuilds
-            // its world from the other's seed; the other side simply tolerates the offer.
+            // its world from the other's seed AND the other's factions; the other side
+            // simply tolerates the offer.
             if (AdoptPeerSeed)
             {
-                _world = new World(_world.Map, handshake.Seed);
+                _options = _options with
+                {
+                    FactionAllies = (Sim.FactionId)handshake.FactionAllies,
+                    FactionCentral = (Sim.FactionId)handshake.FactionCentral,
+                };
+                _world = new World(_world.Map, handshake.Seed, _options);
                 WorldReplaced?.Invoke(_world);
             }
             else if (!handshake.WillAdoptSeed)
@@ -197,6 +208,8 @@ public sealed class LockstepSession
         string? mismatch =
             handshake.MapDigest != MapDigest.Of(_world.Map) ? "map mismatch" :
             handshake.InputDelayTicks != _inputDelayTicks ? "input-delay mismatch" :
+            (Sim.FactionId)handshake.FactionAllies != _options.FactionAllies ? "faction mismatch" :
+            (Sim.FactionId)handshake.FactionCentral != _options.FactionCentral ? "faction mismatch" :
             null;
 
         if (mismatch is not null)
@@ -338,7 +351,9 @@ public sealed class LockstepSession
             if (c != 0) return c;
             c = a.Alt.X.Raw.CompareTo(b.Alt.X.Raw);
             if (c != 0) return c;
-            return a.Alt.Y.Raw.CompareTo(b.Alt.Y.Raw);
+            c = a.Alt.Y.Raw.CompareTo(b.Alt.Y.Raw);
+            if (c != 0) return c;
+            return a.Param.CompareTo(b.Param);
         });
         return merged;
     }

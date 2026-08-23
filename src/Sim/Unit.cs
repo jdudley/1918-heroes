@@ -32,6 +32,8 @@ public struct Unit
 
     public int Rank; // veterancy 0..3
     public int Kills;
+    /// <summary>Accumulated veterancy experience (scaled by unit type's VetXpPerKill).</summary>
+    public Fixed Xp;
 
     public OrderKind Order;
     public Fixed2 Goal;

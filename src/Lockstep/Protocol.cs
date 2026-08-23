@@ -5,7 +5,7 @@ namespace Lockstep;
 public static class Protocol
 {
     /// <summary>Bump when the packet format or semantics change. Peers refuse mismatched versions.</summary>
-    public const ushort Version = 2;
+    public const ushort Version = 3;
 
     public enum PacketType : byte
     {
@@ -17,7 +17,8 @@ public static class Protocol
     // --- Hello ---
 
     /// <summary>WillAdoptSeed: sender agrees to rebuild its world from the peer's seed if they differ.</summary>
-    public sealed record Handshake(ulong Seed, ulong MapDigest, byte InputDelayTicks, bool WillAdoptSeed);
+    public sealed record Handshake(ulong Seed, ulong MapDigest, byte InputDelayTicks, bool WillAdoptSeed,
+        byte FactionAllies, byte FactionCentral);
 
     public static byte[] EncodeHello(in Handshake handshake)
     {
@@ -29,15 +30,17 @@ public static class Protocol
         w.Write(handshake.MapDigest);
         w.Write(handshake.InputDelayTicks);
         w.Write(handshake.WillAdoptSeed);
+        w.Write(handshake.FactionAllies);
+        w.Write(handshake.FactionCentral);
         w.Flush();
         return ms.ToArray();
     }
 
     public static bool TryDecodeHello(ReadOnlySpan<byte> payload, out Handshake handshake, out string? error)
     {
-        handshake = new Handshake(0, 0, 0, false);
+        handshake = new Handshake(0, 0, 0, false, 0, 0);
         error = null;
-        if (payload.Length != 1 + 2 + 8 + 8 + 1 + 1)
+        if (payload.Length != 1 + 2 + 8 + 8 + 1 + 1 + 1 + 1)
         {
             error = $"hello size {payload.Length}";
             return false;
@@ -56,7 +59,9 @@ public static class Protocol
         ulong mapDigest = reader.ReadUInt64();
         byte delay = reader.ReadByte();
         bool willAdopt = reader.ReadBoolean();
-        handshake = new Handshake(seed, mapDigest, delay, willAdopt);
+        byte fA = reader.ReadByte();
+        byte fC = reader.ReadByte();
+        handshake = new Handshake(seed, mapDigest, delay, willAdopt, fA, fC);
         return true;
     }
 
@@ -114,13 +119,15 @@ public static class Protocol
         w.Write(c.Pos.Y.Raw);
         w.Write(c.Alt.X.Raw);
         w.Write(c.Alt.Y.Raw);
+        w.Write(c.Param);
     }
 
     private static Command ReadCommand(BinaryReader r) => new(
         r.ReadInt32(),
         (CommandType)r.ReadByte(),
         new Fixed2(Fixed.FromRaw(r.ReadInt64()), Fixed.FromRaw(r.ReadInt64())),
-        new Fixed2(Fixed.FromRaw(r.ReadInt64()), Fixed.FromRaw(r.ReadInt64())));
+        new Fixed2(Fixed.FromRaw(r.ReadInt64()), Fixed.FromRaw(r.ReadInt64())),
+        r.ReadInt32());
 
     // --- HashReport ---
 

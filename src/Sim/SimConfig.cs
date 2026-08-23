@@ -72,6 +72,11 @@ public static class SimConfig
     /// <summary>Suppression gained per second in the cloud: gas is terrifying.</summary>
     public static readonly Fixed GasSuppressionPerSecond = Fixed.FromInt(14);
 
+    // --- Requisition economy ---
+    public static readonly Fixed BaseIncomePerSecond = Fixed.FromInt(5);
+    public static readonly Fixed IncomePerOwnedPointPerSecond = Fixed.FromInt(2);
+    public const int StartingManpower = 80;
+
     // --- Director / flanks ---
     public const int DirectorIntervalTicks = 30 * 30;   // assess momentum every 30 s
     public const int FlankWarningSeconds = 20;          // flare-to-impact telegraph

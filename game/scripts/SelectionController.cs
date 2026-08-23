@@ -78,6 +78,10 @@ public partial class SelectionController : Node3D
             case InputEventKey { Pressed: true, Keycode: Key.G }:
                 _main.ToggleGasMode();
                 break;
+            case InputEventKey { Pressed: true, Keycode: var k }
+                when k is Key.Key1 or Key.Key2 or Key.Key3 or Key.Key4 or Key.Key5 or Key.Key6:
+                _main.TryRequisitionHotkey((int)(k - Key.Key1));
+                break;
         }
     }
 

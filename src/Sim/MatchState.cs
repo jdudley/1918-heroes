@@ -17,6 +17,8 @@ public sealed record MatchOptions
     public int StartingTickets { get; init; } = 500;
     /// <summary>Enemy tickets drained per second per victory point held.</summary>
     public Fixed TicketDrainPerVpPerSecond { get; init; } = Fixed.One;
+    public FactionId FactionAllies { get; init; } = FactionId.BEF;
+    public FactionId FactionCentral { get; init; } = FactionId.GermanEmpire;
 }
 
 /// <summary>Match-level mutable state: tickets, drain accumulators, outcome.</summary>
@@ -52,6 +54,35 @@ public struct MatchState
     /// <summary>Tick at which the side may call its next gas barrage.</summary>
     public int NextGasTickAllies;
     public int NextGasTickCentral;
+
+    // --- Requisition economy ---
+    public int ManpowerAllies;
+    public int ManpowerCentral;
+    public Fixed IncomeAccumAllies;
+    public Fixed IncomeAccumCentral;
+    public int RequisitionsAllies;
+    public int RequisitionsCentral;
+
+    public int Manpower(Side side) => side switch
+    {
+        Side.Allies => ManpowerAllies,
+        Side.Central => ManpowerCentral,
+        _ => 0,
+    };
+
+    public void AddManpower(Side side, int amount)
+    {
+        if (side == Side.Allies) ManpowerAllies += amount;
+        else if (side == Side.Central) ManpowerCentral += amount;
+    }
+
+    public Fixed IncomeAccum(Side side) => side == Side.Allies ? IncomeAccumAllies : IncomeAccumCentral;
+
+    public void SetIncomeAccum(Side side, Fixed v)
+    {
+        if (side == Side.Allies) IncomeAccumAllies = v;
+        else if (side == Side.Central) IncomeAccumCentral = v;
+    }
 
     public int NextGasTick(Side side) => side switch
     {
