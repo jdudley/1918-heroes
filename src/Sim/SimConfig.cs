@@ -63,6 +63,15 @@ public static class SimConfig
     /// <summary>Barrage cooldown per side, in ticks.</summary>
     public const int BarrageCooldownTicks = 30 * 45;
 
+    // --- Gas ---
+    public const int GasCooldownTicks = 30 * 75;
+    public static readonly Fixed GasCloudRadius = Fixed.FromInt(7);
+    public const int GasCloudLifetimeTicks = 30 * 22;
+    /// <summary>Damage per second to anyone standing in the open cloud.</summary>
+    public static readonly Fixed GasDamagePerSecond = Fixed.FromInt(5);
+    /// <summary>Suppression gained per second in the cloud: gas is terrifying.</summary>
+    public static readonly Fixed GasSuppressionPerSecond = Fixed.FromInt(14);
+
     // --- Digging ---
     /// <summary>Seconds of uninterrupted digging to complete one trench segment.</summary>
     public static readonly Fixed DigSeconds = Fixed.FromInt(10);

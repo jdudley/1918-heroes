@@ -9,7 +9,7 @@ public struct Hasher
 {
     private const ulong FnvOffset = 14695981039346656037UL;
     private const ulong FnvPrime = 1099511628211UL;
-    public const ulong Salt = 0x1918C0DEBA77A5E1UL;
+    public const ulong Salt = 0x1918C0DECAFEF00DUL;
 
     private ulong _h;
 

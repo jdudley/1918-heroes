@@ -11,6 +11,8 @@ public enum CommandType : byte
     Barrage = 3,
     /// <summary>Dig in at current position; eventually creates a trench cover object.</summary>
     Dig = 4,
+    /// <summary>Call a gas barrage: drops one lingering, drifting cloud at Pos.</summary>
+    Gas = 5,
 }
 
 /// <summary>Alt carries the second point for two-point commands (barrage walk end); ignored elsewhere.</summary>

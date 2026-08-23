@@ -28,6 +28,11 @@ public sealed class World
     public List<CoverObject> DynamicCover = new();
     /// <summary>Artillery strikes currently walking in.</summary>
     public List<Barrage> Barrages = new();
+    /// <summary>Active chemical clouds, drifting with the match wind.</summary>
+    public List<GasCloud> Clouds = new();
+    /// <summary>Match wind velocity; rolled once from the match seed at creation.</summary>
+    public Fixed2 WindVelocity { get; private set; }
+    internal int _nextGasId;
 
     /// <summary>Transient per-tick output. Excluded from hashing.</summary>
     public List<ShotEvent> Events = new();
@@ -55,6 +60,9 @@ public sealed class World
         foreach (var spec in map.SightBlockers)
             Blockers.Add(spec);
 
+        // The wind is part of the map's fate: one roll per match, identical on every peer.
+        WindVelocity = RollWind();
+
         // Starting armies are part of the map, spawned identically on every peer.
         foreach (var spawn in map.Spawns)
             Spawn(spawn.Side, spawn.TypeId, spawn.Pos);
@@ -70,6 +78,28 @@ public sealed class World
             Winner = Side.Neutral,
         };
     }
+
+    /// <summary>
+    /// The wind is part of the map's fate: rolled once per match from the match
+    /// seed, identical on every peer. Speed in [1.5, 3.5] m/s, uniform direction
+    /// (rejection-sampled vector, no trig).
+    /// </summary>
+    private Fixed2 RollWind()
+    {
+        while (true)
+        {
+            long x = (long)Rng.NextU32() - uint.MaxValue / 2;
+            long y = (long)Rng.NextU32() - uint.MaxValue / 2;
+            var v = new Fixed2(Fixed.FromRaw(x >> 1), Fixed.FromRaw(y >> 1));
+            var lenSq = v.LengthSquared();
+            if (lenSq > Fixed.FromRatio(1, 100))
+                return v.Normalized() * WindSpeed();
+        }
+    }
+
+    private Fixed WindSpeed() =>
+        Fixed.FromRatio(15, 10) +
+        Fixed.FromRatio(2, 1) * Fixed.FromRatio(Rng.NextU32() % 101, 100);
 
     public int Spawn(Side side, int typeId, Fixed2 pos, int rank = 0)
     {
@@ -111,6 +141,7 @@ public sealed class World
         MovementSystem.Step(this);
         DigSystem.Step(this);
         ArtillerySystem.Step(this);
+        GasSystem.Step(this);
         CombatSystem.Step(this);
         SuppressionSystem.Step(this);
         CaptureSystem.Step(this);
@@ -137,6 +168,9 @@ public sealed class World
         h.Mix((int)Match.Winner);
         h.Mix(Match.NextBarrageTickAllies);
         h.Mix(Match.NextBarrageTickCentral);
+        h.Mix(Match.NextGasTickAllies);
+        h.Mix(Match.NextGasTickCentral);
+        h.Mix(WindVelocity);
 
         h.Mix(Blockers.Count);
         for (int i = 0; i < Blockers.Count; i++)
@@ -151,6 +185,16 @@ public sealed class World
             h.Mix(DynamicCover[i].Pos);
             h.Mix(DynamicCover[i].Radius.Raw);
             h.Mix((int)DynamicCover[i].Kind);
+        }
+
+        h.Mix(Clouds.Count);
+        for (int i = 0; i < Clouds.Count; i++)
+        {
+            h.Mix(Clouds[i].Id);
+            h.Mix(Clouds[i].Pos);
+            h.Mix(Clouds[i].Velocity);
+            h.Mix(Clouds[i].Radius.Raw);
+            h.Mix(Clouds[i].TicksRemaining);
         }
 
         h.Mix(Barrages.Count);

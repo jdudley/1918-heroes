@@ -69,7 +69,14 @@ public partial class SelectionController : Node3D
                 break;
             case InputEventKey { Pressed: true, Keycode: Key.Escape }:
                 _main.DisarmBarrage();
+                _main.DisarmGas();
                 ClearSelection();
+                break;
+            case InputEventKey { Pressed: true, Keycode: Key.B }:
+                _main.ToggleBarrageMode();
+                break;
+            case InputEventKey { Pressed: true, Keycode: Key.G }:
+                _main.ToggleGasMode();
                 break;
         }
     }
@@ -78,7 +85,7 @@ public partial class SelectionController : Node3D
     {
         switch (mb.ButtonIndex)
         {
-            case MouseButton.Left when mb.Pressed && _main.BarrageArmed:
+            case MouseButton.Left when mb.Pressed && (_main.BarrageArmed || _main.GasArmed):
                 // Barrage targeting consumes left clicks while armed.
                 var target = GroundPointAt(mb.Position);
                 if (target is not null)

@@ -40,6 +40,9 @@ public static class CommandSystem
                 case CommandType.Barrage:
                     TryCallBarrage(world, ref u, cmd);
                     break;
+                case CommandType.Gas:
+                    TryCallGas(world, ref u, cmd);
+                    break;
             }
             world.Units[cmd.UnitId] = u;
         }
@@ -68,5 +71,28 @@ public static class CommandSystem
         });
 
         match.SetNextBarrageTick(side, world.Tick + SimConfig.BarrageCooldownTicks);
+    }
+
+    private static void TryCallGas(World world, ref Unit issuer, in Command cmd)
+    {
+        Side side = issuer.Side;
+        if (side is not (Side.Allies or Side.Central))
+            return;
+
+        ref MatchState match = ref world.Match;
+        if (world.Tick < match.NextGasTick(side))
+            return;
+
+        // One shell, one lingering cloud. Drift comes from the match wind.
+        world.Clouds.Add(new GasCloud
+        {
+            Id = ++world._nextGasId,
+            Pos = cmd.Pos,
+            Velocity = world.WindVelocity,
+            Radius = SimConfig.GasCloudRadius,
+            TicksRemaining = SimConfig.GasCloudLifetimeTicks,
+        });
+
+        match.SetNextGasTick(side, world.Tick + SimConfig.GasCooldownTicks);
     }
 }

@@ -38,10 +38,13 @@ public partial class Main : Node3D
     private Hud _hud = null!;
     private List<CapturePointView> _pointViews = new();
 
-    // --- barrage targeting ---
+    // --- barrage / gas targeting ---
     public bool BarrageArmed { get; private set; }
+    public bool GasArmed { get; private set; }
     private Fixed2? _barrageStart;
     private MeshInstance3D? _barrageMarker;
+    private MeshInstance3D? _gasMarker;
+    private readonly Dictionary<int, MeshInstance3D> _cloudMeshes = new();
 
     private readonly List<(MeshInstance3D Node, float Ttl)> _flashes = new();
     private int _seenDynamicCover;
@@ -389,7 +392,13 @@ public partial class Main : Node3D
     public void ToggleBarrageMode()
     {
         if (BarrageArmed) DisarmBarrage();
-        else BarrageArmed = true;
+        else { DisarmGas(); BarrageArmed = true; }
+    }
+
+    public void ToggleGasMode()
+    {
+        if (GasArmed) DisarmGas();
+        else { DisarmBarrage(); GasArmed = true; }
     }
 
     public void DisarmBarrage()
@@ -400,8 +409,24 @@ public partial class Main : Node3D
             _barrageMarker.Visible = false;
     }
 
+    public void DisarmGas()
+    {
+        GasArmed = false;
+        if (_gasMarker is not null)
+            _gasMarker.Visible = false;
+    }
+
     public void HandleBarrageClick(Fixed2 ground)
     {
+        if (GasArmed)
+        {
+            int caller = FirstAliveOwnedUnit();
+            if (caller >= 0)
+                IssueOrder(new Command(caller, CommandType.Gas, ground, default));
+            DisarmGas();
+            return;
+        }
+
         if (!BarrageArmed) return;
 
         if (_barrageStart is null)
@@ -413,9 +438,9 @@ public partial class Main : Node3D
             return;
         }
 
-        int caller = FirstAliveOwnedUnit();
-        if (caller >= 0)
-            IssueOrder(new Command(caller, CommandType.Barrage, _barrageStart.Value, ground));
+        int caller2 = FirstAliveOwnedUnit();
+        if (caller2 >= 0)
+            IssueOrder(new Command(caller2, CommandType.Barrage, _barrageStart.Value, ground));
         DisarmBarrage();
     }
 
@@ -443,6 +468,73 @@ public partial class Main : Node3D
             Visible = false,
         };
         AddChild(_barrageMarker);
+    }
+
+    private void EnsureGasMarker()
+    {
+        if (_gasMarker is not null) return;
+        _gasMarker = new MeshInstance3D
+        {
+            Mesh = new TorusMesh { InnerRadius = 0.8f, OuterRadius = 1.1f },
+            MaterialOverride = new StandardMaterial3D
+            {
+                AlbedoColor = new Color(0.5f, 0.9f, 0.4f),
+                ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+            },
+            Scale = new Vector3(1, 0.15f, 1),
+            Visible = false,
+        };
+        AddChild(_gasMarker);
+    }
+
+    private void SyncGasClouds(World world)
+    {
+        if (GasArmed)
+        {
+            EnsureGasMarker();
+            _gasMarker!.Visible = true;
+        }
+        else if (_gasMarker is not null)
+        {
+            _gasMarker.Visible = false;
+        }
+
+        // Reconcile drifting clouds by id.
+        for (int i = 0; i < world.Clouds.Count; i++)
+        {
+            var cloud = world.Clouds[i];
+            if (!_cloudMeshes.TryGetValue(cloud.Id, out var mesh))
+            {
+                float r = cloud.Radius.Raw / Fixed.OneRaw;
+                mesh = new MeshInstance3D
+                {
+                    Mesh = new CylinderMesh { TopRadius = r, BottomRadius = r * 1.15f, Height = 2.6f },
+                    MaterialOverride = new StandardMaterial3D
+                    {
+                        AlbedoColor = new Color(0.55f, 0.85f, 0.35f, 0.35f),
+                        ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+                        Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
+                    },
+                    Position = UnitView.ToGodot(cloud.Pos) with { Y = 1.3f },
+                };
+                AddChild(mesh);
+                _cloudMeshes[cloud.Id] = mesh;
+            }
+
+            mesh.Position = UnitView.ToGodot(cloud.Pos) with { Y = 1.3f };
+        }
+
+        // Expired clouds: drop meshes whose ids vanished.
+        List<int>? dead = null;
+        foreach (var id in _cloudMeshes.Keys)
+            if (!world.Clouds.Any(c => c.Id == id))
+                (dead ??= new List<int>()).Add(id);
+        if (dead is not null)
+            foreach (int id in dead)
+            {
+                _cloudMeshes[id].QueueFree();
+                _cloudMeshes.Remove(id);
+            }
     }
 
     // ------------------------------------------------------------------ battlefield FX
@@ -554,6 +646,13 @@ public partial class Main : Node3D
         return $"{(int)MathF.Ceiling((next - world.Tick) / 30f)}s";
     }
 
+    private string GasStatusText(World world)
+    {
+        int next = world.Match.NextGasTick(MySide);
+        if (world.Tick >= next) return "READY";
+        return $"{(int)MathF.Ceiling((next - world.Tick) / 30f)}s";
+    }
+
     private void TickMatch(double delta)
     {
         bool worldChanged = false;
@@ -631,10 +730,13 @@ public partial class Main : Node3D
             _pointViews[i].Sync(_world.Points[i]);
 
         SyncBattlefield(World);
+        SyncGasClouds(World);
 
         string barrageStatus = BarrageStatusText(World);
-        string hintPrefix = BarrageArmed ? "BARRAGE: click start then end · " : "";
-        _hud.SetHint($"{hintPrefix}LMB select · drag box · RMB attack-move · B barrage [{barrageStatus}] · WASD pan · wheel zoom");
+        string gasStatus = GasStatusText(World);
+        string hintPrefix = BarrageArmed ? "BARRAGE: click start then end · "
+                          : GasArmed ? "GAS: click drop point · " : "";
+        _hud.SetHint($"{hintPrefix}LMB select · RMB attack-move · B barrage [{barrageStatus}] · G gas [{gasStatus}] · WASD pan · wheel zoom");
 
         _hud.Sync(_world, _mySide);
 

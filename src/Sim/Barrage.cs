@@ -14,3 +14,17 @@ public struct Barrage
     public int Remaining;
     public int NextTick;
 }
+
+
+/// <summary>
+/// A lingering chemical cloud. Drifts with the match's wind, damages and
+/// suppresses everyone inside regardless of side. Expires after a while.
+/// </summary>
+public struct GasCloud
+{
+    public int Id;
+    public Fixed2 Pos;
+    public Fixed2 Velocity;
+    public Fixed Radius;
+    public int TicksRemaining;
+}

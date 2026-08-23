@@ -49,6 +49,23 @@ public struct MatchState
         else if (side == Side.Central) NextBarrageTickCentral = tick;
     }
 
+    /// <summary>Tick at which the side may call its next gas barrage.</summary>
+    public int NextGasTickAllies;
+    public int NextGasTickCentral;
+
+    public int NextGasTick(Side side) => side switch
+    {
+        Side.Allies => NextGasTickAllies,
+        Side.Central => NextGasTickCentral,
+        _ => int.MaxValue,
+    };
+
+    public void SetNextGasTick(Side side, int tick)
+    {
+        if (side == Side.Allies) NextGasTickAllies = tick;
+        else if (side == Side.Central) NextGasTickCentral = tick;
+    }
+
     public int Remaining(Side side) => side switch
     {
         Side.Allies => TicketsAllies,
