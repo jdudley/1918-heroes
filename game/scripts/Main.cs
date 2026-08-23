@@ -181,6 +181,19 @@ public partial class Main : Node3D
 
         panel.AddChild(MenuButton("Join co-op (you are Central)", DoJoin));
 
+        panel.AddChild(new Control { CustomMinimumSize = new Vector2(0, 16) });
+
+        var controls = new Label
+        {
+            Text = "CAMERA  wheel zoom (cursor-anchored) · WASD / screen edges pan · Q/E rotate · MMB drag\n" +
+                   "ORDERS  LMB select / drag-box · RMB attack-move · Shift adds to selection\n" +
+                   "SUPPORT B barrage (two clicks) · G gas · keys 1-6 requisition squads\n",
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Modulate = new Color(1f, 1f, 1f, 0.55f),
+        };
+        controls.AddThemeFontSizeOverride("font_size", 14);
+        panel.AddChild(controls);
+
         _menuStatus = new Label
         {
             Text = "",

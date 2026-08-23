@@ -3,19 +3,32 @@ using Godot;
 namespace Heroes1918;
 
 /// <summary>
-/// RTS camera: WASD/arrows to pan (scaled by zoom), wheel to zoom, clamped to the map.
-/// The view direction is fixed; north stays up.
+/// Company-of-Heroes-style RTS camera:
+/// - Wheel zoom sweeps from strategic height down to behind your troops,
+///   flattening the pitch as you close in, and pulls toward the cursor.
+/// - WASD/arrows pan relative to view; screen-edge scrolling works too.
+/// - Q/E rotate, middle-mouse drag grabs the ground.
+/// Not thread-safe trivia aside, everything is frame-rate independent.
 /// </summary>
 public partial class RtsCamera : Camera3D
 {
-    private const float PitchDeg = 56f;
-    private const float MinDist = 22f;
-    private const float MaxDist = 95f;
+    private const float PitchFarDeg = 64f;   // strategic view: mostly top-down
+    private const float PitchNearDeg = 34f;  // zoomed in: behind your troops
+    private const float MinDist = 13f;
+    private const float MaxDist = 135f;
+    private const float EdgeMarginPx = 26f;
+    private const float BaseFovDeg = 75f;
 
     private Vector2 _center;
+    private float _yaw;            // radians around vertical, 0 = camera south of center
+    private float _distTarget = 55f;
     private float _dist = 55f;
     private float _mapW = 1000f;
     private float _mapH = 1000f;
+
+    private bool _grabbing;
+    private Vector2 _grabLast;
+    private Vector2 _grabCenterAtStart;
 
     public void Setup(float mapWidth, float mapHeight)
     {
@@ -29,57 +42,173 @@ public partial class RtsCamera : Camera3D
     public override void _Process(double delta)
     {
         float dt = (float)delta;
-        var move = Vector2.Zero;
-
-        if (Input.IsKeyPressed(Key.W) || Input.IsKeyPressed(Key.Up)) move.Y -= 1;
-        if (Input.IsKeyPressed(Key.S) || Input.IsKeyPressed(Key.Down)) move.Y += 1;
-        if (Input.IsKeyPressed(Key.A) || Input.IsKeyPressed(Key.Left)) move.X -= 1;
-        if (Input.IsKeyPressed(Key.D) || Input.IsKeyPressed(Key.Right)) move.X += 1;
-
-        if (move != Vector2.Zero)
-        {
-            move = move.Normalized() * dt * _dist * 0.9f;
-            _center += move;
-            ClampCenter();
-            Apply();
-        }
+        HandleKeyboardPan(dt);
+        HandleEdgeScroll(dt);
+        SmoothZoom(dt);
+        ClampCenter();
+        Apply();
     }
+
+    // ------------------------------------------------------------ input events
 
     public override void _UnhandledInput(InputEvent @event)
     {
-        if (@event is InputEventMouseButton { Pressed: true } mb)
+        switch (@event)
         {
-            switch (mb.ButtonIndex)
-            {
-                case MouseButton.WheelUp:
-                    Zoom(0.88f);
-                    break;
-                case MouseButton.WheelDown:
-                    Zoom(1.14f);
-                    break;
-            }
+            case InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.WheelUp } mb:
+                ZoomBy(0.82f, mb.Position);
+                break;
+            case InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.WheelDown } mb:
+                ZoomBy(1.22f, mb.Position);
+                break;
+            case InputEventMouseButton { ButtonIndex: MouseButton.Middle } mmb:
+                _grabbing = mmb.Pressed;
+                _grabLast = mmb.Position;
+                _grabCenterAtStart = _center;
+                break;
+            case InputEventMouseMotion mm when _grabbing:
+                GrabPan(mm.Relative);
+                break;
+            case InputEventKey { Pressed: true, Keycode: Key.Q }:
+                _yaw += 0.06f;
+                break;
+            case InputEventKey { Pressed: true, Keycode: Key.E }:
+                _yaw -= 0.06f;
+                break;
         }
     }
 
-    private void Zoom(float factor)
+    private void ZoomBy(float factor, Vector2 cursorPos)
     {
-        _dist = Mathf.Clamp(_dist * factor, MinDist, MaxDist);
-        Apply();
+        float old = _distTarget;
+        _distTarget = Mathf.Clamp(_distTarget * factor, MinDist, MaxDist);
+
+        // Pull the view center toward whatever is under the cursor (CoH-style).
+        var g = GroundPointAt(cursorPos);
+        if (g is not null && old > 0.01f)
+        {
+            float k = Mathf.Clamp(_distTarget / old, 0f, 1f);
+            _center += (g.Value - _center) * (1f - k);
+        }
+    }
+
+    private void GrabPan(Vector2 relative)
+    {
+        float mpp = MetersPerPixel();
+        var right = ScreenRight();
+        var up = ScreenForward();
+        _center -= right * (relative.X * mpp);
+        _center -= up * (-relative.Y * mpp);
+        ClampCenter();
+    }
+
+    // ---------------------------------------------------------------- helpers
+
+    /// <summary>Ground direction that appears "up" on screen.</summary>
+    private Vector2 ScreenForward() => new(-Mathf.Sin(_yaw), -Mathf.Cos(_yaw));
+
+    /// <summary>Ground direction that appears "right" on screen.</summary>
+    private Vector2 ScreenRight() => new(Mathf.Cos(_yaw), -Mathf.Sin(_yaw));
+
+    private float MetersPerPixel()
+    {
+        float viewportH = GetViewport().GetVisibleRect().Size.Y;
+        if (viewportH < 1) viewportH = 900f;
+        return 2f * _dist * Mathf.Tan(Mathf.DegToRad(BaseFovDeg) / 2f) / viewportH;
+    }
+
+    private void HandleKeyboardPan(float dt)
+    {
+        var move = Vector2.Zero;
+        if (Input.IsKeyPressed(Key.W) || Input.IsKeyPressed(Key.Up)) move += ScreenForward();
+        if (Input.IsKeyPressed(Key.S) || Input.IsKeyPressed(Key.Down)) move -= ScreenForward();
+        if (Input.IsKeyPressed(Key.D) || Input.IsKeyPressed(Key.Right)) move += ScreenRight();
+        if (Input.IsKeyPressed(Key.A) || Input.IsKeyPressed(Key.Left)) move -= ScreenRight();
+
+        if (move != Vector2.Zero)
+        {
+            _center += move.Normalized() * dt * PanSpeed();
+            ClampCenter();
+        }
+    }
+
+    private void HandleEdgeScroll(float dt)
+    {
+        // No edge scrolling without a real pointer (headless runs, unfocused window).
+        if (DisplayServer.GetName() == "headless")
+            return;
+        if (DisplayServer.GetName().Contains("headless", StringComparison.OrdinalIgnoreCase))
+            return;
+        if (!GetWindow().HasFocus())
+            return;
+
+        var size = GetViewport().GetVisibleRect().Size;
+        var mouse = GetViewport().GetMousePosition();
+
+        float push = 0f;
+        var dir = Vector2.Zero;
+
+        if (mouse.X < EdgeMarginPx) { dir.X -= 1f; push = 1f - mouse.X / EdgeMarginPx; }
+        else if (mouse.X > size.X - EdgeMarginPx) { dir.X += 1f; push = 1f - (size.X - mouse.X) / EdgeMarginPx; }
+        if (mouse.Y < EdgeMarginPx) { dir.Y -= 1f; push = Mathf.Max(push, 1f - mouse.Y / EdgeMarginPx); }
+        else if (mouse.Y > size.Y - EdgeMarginPx) { dir.Y += 1f; push = Mathf.Max(push, 1f - (size.Y - mouse.Y) / EdgeMarginPx); }
+
+        if (push <= 0f || dir == Vector2.Zero)
+            return;
+
+        // Screen directions are already view-relative; normalize the diagonal.
+        var world = (dir.Normalized().X * ScreenRight()) + (dir.Normalized().Y * ScreenForward());
+        _center += world * dt * PanSpeed() * push;
+        ClampCenter();
+    }
+
+    private float PanSpeed() => _dist * 1.15f;
+
+    private void SmoothZoom(double dt)
+    {
+        // Exponential approach: fast when far off, settles gently.
+        float blend = 1f - Mathf.Exp(-12f * (float)dt);
+        _dist = Mathf.Lerp(_dist, _distTarget, blend);
     }
 
     private void ClampCenter()
     {
-        float marginX = _dist * 0.35f;
-        float marginY = _dist * 0.35f;
+        float marginX = _dist * 0.45f;
+        float marginY = _dist * 0.45f;
         _center.X = Mathf.Clamp(_center.X, -marginX, _mapW + marginX);
         _center.Y = Mathf.Clamp(_center.Y, -marginY, _mapH + marginY);
     }
 
     private void Apply()
     {
-        float pitch = Mathf.DegToRad(PitchDeg);
-        var offset = new Vector3(0, Mathf.Sin(pitch), Mathf.Cos(pitch)) * _dist;
+        // Pitch flattens as you close in: strategic overhead vs over-the-shoulder.
+        float zoomFrac = Mathf.Clamp(
+            (_dist - MinDist) / (MaxDist - MinDist), 0f, 1f);
+        float pitch = Mathf.DegToRad(Mathf.Lerp(PitchNearDeg, PitchFarDeg, zoomFrac));
+
+        float horiz = Mathf.Cos(pitch) * _dist;
+        float vert = Mathf.Sin(pitch) * _dist;
+
+        var offset = new Vector3(
+            Mathf.Sin(_yaw) * horiz,
+            vert,
+            Mathf.Cos(_yaw) * horiz);
+
         Position = new Vector3(_center.X, 0, _center.Y) + offset;
         LookAt(new Vector3(_center.X, 0, _center.Y), Vector3.Up);
+    }
+
+    /// <summary>Intersect a screen point's ray with the ground plane (world XZ).</summary>
+    private Vector2? GroundPointAt(Vector2 screen)
+    {
+        var origin = ProjectRayOrigin(screen);
+        var dir = ProjectRayNormal(screen);
+        if (Mathf.Abs(dir.Y) < 1e-5f)
+            return null;
+        float t = -origin.Y / dir.Y;
+        if (t < 0)
+            return null;
+        var hit = origin + dir * t;
+        return new Vector2(hit.X, hit.Z);
     }
 }
