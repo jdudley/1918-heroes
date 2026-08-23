@@ -66,11 +66,13 @@ public partial class RtsCamera : Camera3D
     {
         switch (@event)
         {
-            case InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.WheelUp }:
-                _pendingZoomSteps -= 1f;
+            // Factor is 1 on real wheels and proportional on trackpads, so
+            // two-finger scrolling zooms smoothly instead of flooding notches.
+            case InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.WheelUp } mb:
+                _pendingZoomSteps -= Mathf.Clamp(mb.Factor, 0.2f, 3f);
                 break;
-            case InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.WheelDown }:
-                _pendingZoomSteps += 1f;
+            case InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.WheelDown } mb:
+                _pendingZoomSteps += Mathf.Clamp(mb.Factor, 0.2f, 3f);
                 break;
             case InputEventKey { Pressed: true, Keycode: Key.Equal }:
                 _pendingZoomSteps -= 1f;
@@ -83,7 +85,8 @@ public partial class RtsCamera : Camera3D
                 _grabLast = mmb.Position;
                 _grabCenterAtStart = _center;
                 break;
-            case InputEventMouseMotion mm when _grabbing:
+            case InputEventMouseMotion mm when _grabbing || Input.IsKeyPressed(Key.Space):
+                // Middle-drag or Space+drag: the trackpad-friendly grab pan.
                 GrabPan(mm.Relative);
                 break;
             case InputEventKey { Pressed: true, Keycode: Key.Q }:

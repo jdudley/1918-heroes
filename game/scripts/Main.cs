@@ -185,7 +185,7 @@ public partial class Main : Node3D
 
         var controls = new Label
         {
-            Text = "CAMERA  arrows/WASD pan · screen edges pan · wheel or +/- zoom · Q/E rotate · MMB drag\n" +
+            Text = "CAMERA  arrows/WASD pan · screen edges pan · two-finger scroll zooms · Space+drag pans\n                    Q/E rotate · +/- zoom · MMB drag\n" +
                    "ORDERS  LMB select / drag-box · RMB attack-move · Shift adds to selection\n" +
                    "SUPPORT B barrage (two clicks) · G gas · keys 1-6 requisition squads\n",
             HorizontalAlignment = HorizontalAlignment.Center,
