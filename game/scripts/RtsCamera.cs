@@ -29,8 +29,9 @@ public partial class RtsCamera : Camera3D
     private bool _grabbing;
     private Vector2 _grabLast;
     private Vector2 _grabCenterAtStart;
-    /// <summary>Wheel notches accumulated this frame; applied once so trackpads cannot flood.</summary>
+    /// <summary>Wheel notches accumulated; consumed at a capped per-second rate.</summary>
     private float _pendingZoomSteps;
+    private const float MaxZoomNotchesPerSecond = 11f;
 
     public void Setup(float mapWidth, float mapHeight)
     {
@@ -47,10 +48,14 @@ public partial class RtsCamera : Camera3D
 
         if (Mathf.Abs(_pendingZoomSteps) > 0.01f)
         {
-            // Plain centre-pivot zoom, one notch = -12% distance (CoH-style).
-            float factor = Mathf.Pow(0.88f, Mathf.Clamp(_pendingZoomSteps, -6f, 6f));
+            // Consume at most MaxZoomNotchesPerSecond notches: real wheels land
+            // instantly, trackpad floods become smooth continuous zoom.
+            float maxSteps = MaxZoomNotchesPerSecond * dt;
+            float used = Mathf.Clamp(_pendingZoomSteps, -maxSteps, maxSteps);
+            _pendingZoomSteps -= used;
+
+            float factor = Mathf.Pow(0.88f, used);
             _distTarget = Mathf.Clamp(_distTarget * factor, MinDist, MaxDist);
-            _pendingZoomSteps = 0f;
         }
 
         HandleKeyboardPan(dt);
@@ -66,13 +71,14 @@ public partial class RtsCamera : Camera3D
     {
         switch (@event)
         {
-            // Factor is 1 on real wheels and proportional on trackpads, so
-            // two-finger scrolling zooms smoothly instead of flooding notches.
-            case InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.WheelUp } mb:
-                _pendingZoomSteps -= Mathf.Clamp(mb.Factor, 0.2f, 3f);
+            // macOS reports Factor=0 for trackpad scrolls, so ignore it: every
+            // event counts one notch, and the per-frame rate cap below turns a
+            // two-finger flood into smooth continuous zoom.
+            case InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.WheelUp }:
+                _pendingZoomSteps -= 1f;
                 break;
-            case InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.WheelDown } mb:
-                _pendingZoomSteps += Mathf.Clamp(mb.Factor, 0.2f, 3f);
+            case InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.WheelDown }:
+                _pendingZoomSteps += 1f;
                 break;
             case InputEventKey { Pressed: true, Keycode: Key.Equal }:
                 _pendingZoomSteps -= 1f;
@@ -179,10 +185,11 @@ public partial class RtsCamera : Camera3D
 
     private void ClampCenter()
     {
-        float marginX = _dist * 0.45f;
-        float marginY = _dist * 0.45f;
-        _center.X = Mathf.Clamp(_center.X, -marginX, _mapW + marginX);
-        _center.Y = Mathf.Clamp(_center.Y, -marginY, _mapH + marginY);
+        // CoH rule: the camera focus point stays on the map, period - you cannot
+        // scroll past the edge at any zoom level.
+        const float inset = 2f;
+        _center.X = Mathf.Clamp(_center.X, inset, _mapW - inset);
+        _center.Y = Mathf.Clamp(_center.Y, inset, _mapH - inset);
     }
 
     private void Apply()
