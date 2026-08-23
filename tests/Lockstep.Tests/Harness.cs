@@ -10,16 +10,16 @@ public static class Harness
 {
     public static Fixed M(int v) => Fixed.FromInt(v);
 
-    public static MapDef Map() => new(
-        Name: "lockstep-test",
-        Width: M(96),
-        Height: M(64),
-        CapturePoints: new[]
+    public static MapDef Map() => new()
+    {
+        Name = "lockstep-test",
+        Width = M(96),
+        Height = M(64),
+        CapturePoints = new[]
         {
             new CapturePointSpec(new Fixed2(M(48), M(32)), M(6), IsVictoryPoint: true),
         },
-        Cover: System.Array.Empty<CoverObject>(),
-        SightBlockers: System.Array.Empty<Obstacle>());
+    };
 
     /// <summary>Two worlds + two sessions over a loopback with optional per-direction pump delay.
     /// mapOverride/overrideSeedB apply to world A only, to create handshake mismatches on demand.</summary>

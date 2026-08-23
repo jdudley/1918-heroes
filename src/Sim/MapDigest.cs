@@ -39,6 +39,14 @@ public static class MapDigest
             h.Mix(o.Radius.Raw);
         }
 
+        h.Mix(map.Spawns.Count);
+        foreach (var s in map.Spawns)
+        {
+            h.Mix((int)s.Side);
+            h.Mix(s.TypeId);
+            h.Mix(s.Pos);
+        }
+
         return h.Digest;
     }
 }

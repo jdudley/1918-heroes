@@ -15,6 +15,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lockstep", "src\Lockstep\Lo
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lockstep.Tests", "tests\Lockstep.Tests\Lockstep.Tests.csproj", "{CC549C61-CB55-4DCC-A0BE-764F06038D1F}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Game", "game\Game.csproj", "{F7CFD171-B0B5-4D61-935A-4C1718E66145}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -40,6 +42,10 @@ Global
 		{CC549C61-CB55-4DCC-A0BE-764F06038D1F}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{CC549C61-CB55-4DCC-A0BE-764F06038D1F}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{CC549C61-CB55-4DCC-A0BE-764F06038D1F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F7CFD171-B0B5-4D61-935A-4C1718E66145}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F7CFD171-B0B5-4D61-935A-4C1718E66145}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F7CFD171-B0B5-4D61-935A-4C1718E66145}.Release|Any CPU.ActiveCfg = Debug|Any CPU
+		{F7CFD171-B0B5-4D61-935A-4C1718E66145}.Release|Any CPU.Build.0 = Debug|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{8F4ED977-0D0A-4136-AB14-5FD50EBF84B5} = {C5809640-8E9C-4C45-86E3-A2E94B9AD862}

@@ -16,7 +16,8 @@ public static class Protocol
 
     // --- Hello ---
 
-    public sealed record Handshake(ulong Seed, ulong MapDigest, byte InputDelayTicks);
+    /// <summary>WillAdoptSeed: sender agrees to rebuild its world from the peer's seed if they differ.</summary>
+    public sealed record Handshake(ulong Seed, ulong MapDigest, byte InputDelayTicks, bool WillAdoptSeed);
 
     public static byte[] EncodeHello(in Handshake handshake)
     {
@@ -27,15 +28,16 @@ public static class Protocol
         w.Write(handshake.Seed);
         w.Write(handshake.MapDigest);
         w.Write(handshake.InputDelayTicks);
+        w.Write(handshake.WillAdoptSeed);
         w.Flush();
         return ms.ToArray();
     }
 
     public static bool TryDecodeHello(ReadOnlySpan<byte> payload, out Handshake handshake, out string? error)
     {
-        handshake = new Handshake(0, 0, 0);
+        handshake = new Handshake(0, 0, 0, false);
         error = null;
-        if (payload.Length != 1 + 2 + 8 + 8 + 1)
+        if (payload.Length != 1 + 2 + 8 + 8 + 1 + 1)
         {
             error = $"hello size {payload.Length}";
             return false;
@@ -53,7 +55,8 @@ public static class Protocol
         ulong seed = reader.ReadUInt64();
         ulong mapDigest = reader.ReadUInt64();
         byte delay = reader.ReadByte();
-        handshake = new Handshake(seed, mapDigest, delay);
+        bool willAdopt = reader.ReadBoolean();
+        handshake = new Handshake(seed, mapDigest, delay, willAdopt);
         return true;
     }
 

@@ -31,9 +31,20 @@ public sealed record DesyncReport(int Tick, ulong LocalHash, ulong RemoteHash);
 /// </summary>
 public sealed class LockstepSession
 {
-    private readonly World _world;
+    private World _world;
     private readonly ITransport _transport;
     private readonly byte _inputDelayTicks;
+
+    /// <summary>
+    /// When true, a seed mismatch during the handshake rebuilds this peer's world with the
+    /// HOST's seed instead of faulting. The joiner sets this; the host never does, so exactly
+    /// one side adopts and the other's seed wins. Requires all starting forces to live in the
+    /// map definition (they do).
+    /// </summary>
+    public bool AdoptPeerSeed { get; set; }
+
+    /// <summary>Raised when <see cref="AdoptPeerSeed"/> replaced the world. Views must rebind.</summary>
+    public event Action<World>? WorldReplaced;
 
     // Frames not yet consumed by execution, indexed by target tick.
     private readonly Dictionary<int, List<Command>> _myFrames = new();
@@ -60,6 +71,8 @@ public sealed class LockstepSession
 
     public int ExecutedTick => _lastExecutedTick;
     public byte InputDelayTicks => _inputDelayTicks;
+    /// <summary>The world being simulated. May be replaced by seed adoption; listen for WorldReplaced.</summary>
+    public World World => _world;
     internal int OutboundQueueLength => _nextFrameToSend - 1 - _lastExecutedTick;
 
     public LockstepSession(World world, ITransport transport, byte inputDelayTicks = 3)
@@ -79,7 +92,8 @@ public sealed class LockstepSession
         var hello = Protocol.EncodeHello(new Protocol.Handshake(
             _world.MatchSeed,
             MapDigest.Of(_world.Map),
-            _inputDelayTicks));
+            _inputDelayTicks,
+            AdoptPeerSeed));
         _transport.Send(hello);
     }
 
@@ -163,8 +177,24 @@ public sealed class LockstepSession
             return;
         }
 
+        bool seedMismatch = handshake.Seed != _world.MatchSeed;
+        if (seedMismatch)
+        {
+            // Exactly one side may adopt: the peer that declared WillAdoptSeed rebuilds
+            // its world from the other's seed; the other side simply tolerates the offer.
+            if (AdoptPeerSeed)
+            {
+                _world = new World(_world.Map, handshake.Seed);
+                WorldReplaced?.Invoke(_world);
+            }
+            else if (!handshake.WillAdoptSeed)
+            {
+                Fault("seed mismatch");
+                return;
+            }
+        }
+
         string? mismatch =
-            handshake.Seed != _world.MatchSeed ? "seed mismatch" :
             handshake.MapDigest != MapDigest.Of(_world.Map) ? "map mismatch" :
             handshake.InputDelayTicks != _inputDelayTicks ? "input-delay mismatch" :
             null;

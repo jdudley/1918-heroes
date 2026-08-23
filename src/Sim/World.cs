@@ -43,6 +43,10 @@ public sealed class World
                 Progress = Fixed.Zero,
             });
 
+        // Starting armies are part of the map, spawned identically on every peer.
+        foreach (var spawn in map.Spawns)
+            Spawn(spawn.Side, spawn.TypeId, spawn.Pos);
+
         Match = new MatchState
         {
             StartingTickets = Options.StartingTickets,

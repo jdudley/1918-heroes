@@ -10,7 +10,7 @@ public class ProtocolTests
     [Fact]
     public void Hello_RoundTrips()
     {
-        var hello = new Protocol.Handshake(Seed: 123456789, MapDigest: 0xDEADBEEFCAFE, InputDelayTicks: 5);
+        var hello = new Protocol.Handshake(Seed: 123456789, MapDigest: 0xDEADBEEFCAFE, InputDelayTicks: 5, WillAdoptSeed: false);
         var bytes = Protocol.EncodeHello(hello);
 
         var ok = Protocol.TryDecodeHello(bytes, out var decoded, out var error);
@@ -24,7 +24,7 @@ public class ProtocolTests
     [Fact]
     public void Hello_RejectsWrongVersion()
     {
-        var bytes = Protocol.EncodeHello(new Protocol.Handshake(1, 2, 3));
+        var bytes = Protocol.EncodeHello(new Protocol.Handshake(1, 2, 3, false));
         bytes[1] = 0xFF; // clobber version
         // Recompute length is unchanged; decoder must reject on version.
         var ok = Protocol.TryDecodeHello(bytes, out _, out var error);
