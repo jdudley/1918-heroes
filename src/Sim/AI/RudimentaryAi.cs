@@ -1,11 +1,12 @@
 namespace Sim;
 
 /// <summary>
-/// The first-pass skirmish AI: every few seconds each squad is handed an
-/// objective — capture the nearest unowned/enemy point (victory points preferred,
-/// squads spread across objectives), or, once everything flies our colours,
-/// hunt down the nearest enemy. The sim's own attack-move engagement does the
-/// fighting; the AI only picks destinations. Fully deterministic.
+/// The skirmish AI: every few seconds each squad is handed an objective —
+/// capture the nearest unowned/enemy point (victory points preferred, squads
+/// spread across objectives), defend owned points that enemies approach,
+/// retreat when broken rather than die in place, or hunt once everything
+/// flies our colours. The sim's own attack-move engagement does the fighting;
+/// the AI only picks destinations. Fully deterministic.
 /// </summary>
 public sealed class RudimentaryAi
 {
@@ -15,6 +16,7 @@ public sealed class RudimentaryAi
     private readonly Side _side;
     private readonly int _replanIntervalTicks;
     private readonly Dictionary<int, Fixed2> _goals = new();
+    private readonly HashSet<int> _retreating = new();
     private int _lastBarrageTick = -1_000_000;
 
     public RudimentaryAi(Side side, int replanIntervalTicks = 90)
@@ -45,12 +47,22 @@ public sealed class RudimentaryAi
             if (!u.Alive || u.Side != _side)
                 continue;
 
-            if (_goals.TryGetValue(u.Id, out var goal))
+            if (!_goals.TryGetValue(u.Id, out var goal))
+                continue;
+
+            if (_retreating.Contains(u.Id))
             {
-                bool needsOrder = u.Order == OrderKind.Idle || u.Goal != goal;
-                if (needsOrder && u.Pos != goal)
-                    commands.Add(new Command(u.Id, CommandType.AttackMove, goal));
+                // Broken squads fall back ignoring enemies entirely.
+                if (u.Order != OrderKind.Move && u.Pos != goal)
+                    commands.Add(new Command(u.Id, CommandType.Move, goal));
+                else if (u.Order == OrderKind.Move && u.Goal != goal && u.Pos != goal)
+                    commands.Add(new Command(u.Id, CommandType.Move, goal));
+                continue;
             }
+
+            bool needsOrder = u.Order == OrderKind.Idle || u.Goal != goal;
+            if (needsOrder && u.Pos != goal)
+                commands.Add(new Command(u.Id, CommandType.AttackMove, goal));
         }
         return commands;
     }
@@ -108,15 +120,92 @@ public sealed class RudimentaryAi
     private void Replan(World world)
     {
         PruneDead(world);
+        _retreating.Clear();
 
         var myUnitIds = new List<int>();
+        var available = new List<int>();
         var units = world.Units;
-        for (int i = 0; i < units.Count; i++)
-            if (units[i].Alive && units[i].Side == _side)
-                myUnitIds.Add(i);
 
+        for (int i = 0; i < units.Count; i++)
+        {
+            var u = units[i];
+            if (!u.Alive || u.Side != _side)
+                continue;
+            myUnitIds.Add(i);
+            available.Add(i);
+        }
         if (myUnitIds.Count == 0)
             return;
+
+        // 1) Broken squads near enemies fall back to safety instead of dying in place.
+        foreach (int id in myUnitIds)
+        {
+            var u = units[id];
+            Fixed hpFrac = u.Hp / u.Type.MaxHp;
+            int nearestEnemy = -1;
+            long nearestSq = long.MaxValue;
+            for (int j = 0; j < units.Count; j++)
+            {
+                var e = units[j];
+                if (!e.Alive || e.Side == _side || e.Side == Side.Neutral)
+                    continue;
+                long dSq = u.Pos.DistanceSquaredTo(e.Pos).Raw;
+                if (dSq < nearestSq) { nearestSq = dSq; nearestEnemy = j; }
+            }
+
+            bool hurt = hpFrac < SimConfig.RetreatHpFraction;
+            bool enemyClose = nearestEnemy >= 0 &&
+                nearestSq <= (SimConfig.RetreatEnemyProximity * SimConfig.RetreatEnemyProximity).Raw;
+
+            if (hurt && enemyClose)
+            {
+                _retreating.Add(id);
+                _goals[id] = SafestOwnedSpot(world, u.Pos);
+            }
+        }
+
+        // 2) Defend owned points that enemies are approaching.
+        var defenders = new HashSet<int>(_retreating);
+        for (int p = 0; p < world.Points.Count; p++)
+        {
+            var point = world.Points[p];
+            if (point.Owner != _side)
+                continue;
+
+            bool threatened = false;
+            for (int j = 0; j < units.Count && !threatened; j++)
+            {
+                var e = units[j];
+                if (!e.Alive || e.Side == _side || e.Side == Side.Neutral)
+                    continue;
+                threatened = e.Pos.DistanceSquaredTo(point.Pos) <=
+                    SimConfig.DefendTriggerRadius * SimConfig.DefendTriggerRadius;
+            }
+            if (!threatened)
+                continue;
+
+            int bestDefender = -1;
+            long bestDistSq = long.MaxValue;
+            foreach (int id in available)
+            {
+                if (defenders.Contains(id))
+                    continue;
+                long dSq = units[id].Pos.DistanceSquaredTo(point.Pos).Raw;
+                if (dSq < bestDistSq) { bestDistSq = dSq; bestDefender = id; }
+            }
+
+            if (bestDefender >= 0)
+            {
+                defenders.Add(bestDefender);
+                _goals[bestDefender] = point.Pos;
+            }
+        }
+
+        // 3) Everyone else captures or hunts.
+        var rest = new List<int>();
+        foreach (int id in myUnitIds)
+            if (!defenders.Contains(id))
+                rest.Add(id);
 
         bool allPointsOurs = true;
         for (int p = 0; p < world.Points.Count; p++)
@@ -124,13 +213,49 @@ public sealed class RudimentaryAi
                 allPointsOurs = false;
 
         if (allPointsOurs || world.Points.Count == 0)
+            AssignHunts(world, rest);
+        else
+            AssignCaptures(world, rest);
+    }
+
+    /// <summary>Nearest owned point as refuge; home edge midpoint when we hold nothing.</summary>
+    private Fixed2 SafestOwnedSpot(World world, Fixed2 from)
+    {
+        CapturePoint? best = null;
+        long bestScore = long.MaxValue;
+        var units = world.Units;
+
+        for (int p = 0; p < world.Points.Count; p++)
         {
-            AssignHunts(world, myUnitIds);
-            return;
+            var point = world.Points[p];
+            if (point.Owner != _side)
+                continue;
+
+            // Prefer owned points far from any enemy.
+            long nearestEnemySq = long.MaxValue;
+            for (int j = 0; j < units.Count; j++)
+            {
+                var e = units[j];
+                if (!e.Alive || e.Side == _side || e.Side == Side.Neutral)
+                    continue;
+                long dSq = point.Pos.DistanceSquaredTo(e.Pos).Raw;
+                if (dSq < nearestEnemySq) nearestEnemySq = dSq;
+            }
+
+            long score = from.DistanceSquaredTo(point.Pos).Raw - Math.Min(nearestEnemySq, 1L << 40);
+            if (score < bestScore) { bestScore = score; best = point; }
         }
 
-        AssignCaptures(world, myUnitIds);
+        if (best is not null)
+            return best.Value.Pos;
+
+        return _side == Side.Allies
+            ? new Fixed2(TestWorldsHomeX(world, allies: true), world.Map.Height / Fixed.FromInt(2))
+            : new Fixed2(TestWorldsHomeX(world, allies: false), world.Map.Height / Fixed.FromInt(2));
     }
+
+    private static Fixed TestWorldsHomeX(World world, bool allies) =>
+        allies ? Fixed.FromInt(6) : world.Map.Width - Fixed.FromInt(6);
 
     private void AssignCaptures(World world, List<int> unitIds)
     {

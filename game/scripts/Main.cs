@@ -639,6 +639,44 @@ public partial class Main : Node3D
 
     private readonly List<Command> _pendingLocal = new();
 
+    /// <summary>
+    /// Player-centric telegraph lines for pending flank events. Every surprise
+    /// must be legible before it lands.
+    /// </summary>
+    private string FlankWarnings(World world)
+    {
+        if (World.PendingFlankEvents.Count == 0)
+            return "";
+
+        var lines = new List<string>();
+        foreach (var e in World.PendingFlankEvents)
+        {
+            int seconds = Math.Max(0, (int)MathF.Ceiling((e.LandTick - world.Tick) / 30f));
+            string flank = e.LeftFlank ? "LEFT" : "RIGHT";
+            bool mine = MySide == Side.Allies ? e.AgainstAllies : !e.AgainstAllies;
+
+            switch (e.Kind)
+            {
+                case FlankEventKind.EnemyReserves when mine:
+                    lines.Add($"!! {flank} FLANK COLLAPSING - enemy reserves in {seconds}s");
+                    break;
+                case FlankEventKind.EnemyReserves:
+                    lines.Add($"{flank} flank: our reserves strike the enemy in {seconds}s");
+                    break;
+                case FlankEventKind.FriendlyReserves when mine:
+                    lines.Add($"{flank} flank holding - spare reserves arrive in {seconds}s");
+                    break;
+                case FlankEventKind.FriendlyReserves:
+                    lines.Add($"{flank} flank: the enemy receives reserves in {seconds}s");
+                    break;
+            }
+        }
+
+        if (lines.Count == 0)
+            return "";
+        return string.Join("   ", lines) + "\n";
+    }
+
     private string BarrageStatusText(World world)
     {
         int next = world.Match.NextBarrageTick(MySide);
@@ -732,11 +770,13 @@ public partial class Main : Node3D
         SyncBattlefield(World);
         SyncGasClouds(World);
 
+        SyncGasClouds(World);
+
         string barrageStatus = BarrageStatusText(World);
         string gasStatus = GasStatusText(World);
         string hintPrefix = BarrageArmed ? "BARRAGE: click start then end · "
                           : GasArmed ? "GAS: click drop point · " : "";
-        _hud.SetHint($"{hintPrefix}LMB select · RMB attack-move · B barrage [{barrageStatus}] · G gas [{gasStatus}] · WASD pan · wheel zoom");
+        _hud.SetHint($"{FlankWarnings(World)}{hintPrefix}LMB select · RMB attack-move · B barrage [{barrageStatus}] · G gas [{gasStatus}] · WASD pan · wheel zoom");
 
         _hud.Sync(_world, _mySide);
 

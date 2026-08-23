@@ -11,7 +11,7 @@ Following the design doc's build order:
 - [x] **1. Sim core** — deterministic Q32.32 fixed-point simulation: squads, cover, suppression and pinning, veterancy, capture points, ticket drain, true line of sight
 - [x] **2. Lockstep networking** — versioned binary protocol over reliable-ordered transport; input-delay send windows; per-tick state-hash desync detection; TCP transport (works over LAN/Tailscale); joiner-side peer-seed adoption
 - [x] **3. First playable** — Godot shell, capsule squads, box selection and attack-move orders, one handcrafted JSON map, rudimentary AI opponent, solo / host / join
-- [~] **4. Barrages & the real AI** *(in progress)* — shipped: walking barrages, craters-as-cover, buildings-blast-to-rubble, trench digging, engineers, wind-drifting gas clouds, AI-called barrages · remaining: flank-sector director, deeper strategic AI
+- [~] **4. Barrages & the real AI** *(in progress)* — shipped: walking barrages, craters-as-cover, buildings-blast-to-rubble, trench digging, engineers, wind-drifting gas, the director with telegraphed flank events (reserve waves and providence), and tactical AI (retreat-when-broken, defend-what-you-hold) · remaining: requisition economy, deeper strategic refinement
 - [ ] **5. Factions** — BEF, AEF, German Empire kits
 - [ ] **6. Art pass** — image-to-3D asset pipeline, animated squad puppets
 - [ ] **7. Adaptive AI loop** — match logging, agent-driven AI patches

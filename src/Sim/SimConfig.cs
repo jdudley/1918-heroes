@@ -72,6 +72,17 @@ public static class SimConfig
     /// <summary>Suppression gained per second in the cloud: gas is terrifying.</summary>
     public static readonly Fixed GasSuppressionPerSecond = Fixed.FromInt(14);
 
+    // --- Director / flanks ---
+    public const int DirectorIntervalTicks = 30 * 30;   // assess momentum every 30 s
+    public const int FlankWarningSeconds = 20;          // flare-to-impact telegraph
+
+    // --- AI tactics ---
+    /// <summary>Squads below this hp fraction near enemies fall back instead of dying.</summary>
+    public static readonly Fixed RetreatHpFraction = Fixed.FromRatio(35, 100);
+    public static readonly Fixed RetreatEnemyProximity = Fixed.FromInt(25);
+    /// <summary>Enemies within this range of an owned point trigger a defender assignment.</summary>
+    public static readonly Fixed DefendTriggerRadius = Fixed.FromInt(22);
+
     // --- Digging ---
     /// <summary>Seconds of uninterrupted digging to complete one trench segment.</summary>
     public static readonly Fixed DigSeconds = Fixed.FromInt(10);

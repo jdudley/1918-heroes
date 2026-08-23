@@ -28,6 +28,10 @@ public sealed class World
     public List<CoverObject> DynamicCover = new();
     /// <summary>Artillery strikes currently walking in.</summary>
     public List<Barrage> Barrages = new();
+    /// <summary>Telegraphed flank events: visible from WarnTick, landing at LandTick.</summary>
+    public List<FlankEvent> PendingFlankEvents = new();
+    internal int _nextFlankEventId;
+    public int NextDirectorThink;
     /// <summary>Active chemical clouds, drifting with the match wind.</summary>
     public List<GasCloud> Clouds = new();
     /// <summary>Match wind velocity; rolled once from the match seed at creation.</summary>
@@ -146,6 +150,7 @@ public sealed class World
         SuppressionSystem.Step(this);
         CaptureSystem.Step(this);
         VictorySystem.Step(this);
+        DirectorSystem.Step(this);
     }
 
     /// <summary>
@@ -196,6 +201,21 @@ public sealed class World
             h.Mix(Clouds[i].Radius.Raw);
             h.Mix(Clouds[i].TicksRemaining);
         }
+
+        h.Mix(PendingFlankEvents.Count);
+        for (int i = 0; i < PendingFlankEvents.Count; i++)
+        {
+            var e = PendingFlankEvents[i];
+            h.Mix(e.Id);
+            h.Mix(e.AgainstAllies);
+            h.Mix((int)e.Kind);
+            h.Mix(e.LeftFlank);
+            h.Mix(e.SpawnPos);
+            h.Mix(e.Squads);
+            h.Mix(e.WarnTick);
+            h.Mix(e.LandTick);
+        }
+        h.Mix(NextDirectorThink);
 
         h.Mix(Barrages.Count);
         for (int i = 0; i < Barrages.Count; i++)

@@ -94,28 +94,27 @@ public class ArtilleryTests
     [Fact]
     public void FreshCraters_GiveRealCover()
     {
-        // Phase A: shell the VP area with nobody there. Phase B: identical MG duels
-        // against targets held on the crater field vs open ground, aggregated over
-        // several seeds so single-stream luck cannot mask the effect.
+        // Per seed: shell the VP area with nobody home, then run an identical MG
+        // duel with the target held on the crater field vs untouched open ground.
         const int ticksShooting = 500;
-
-        // Crater the area once (any seed; craters are terrain, not rolls under test).
-        var template = TestWorlds.Create(777);
-        int spotterA = template.Spawn(Side.Allies, UnitTypes.RifleSquad.Id, new Fixed2(TestWorlds.M(4), TestWorlds.M(4)));
-        template.Step(new[] { new Command(spotterA, CommandType.Barrage,
-            new Fixed2(TestWorlds.M(48), TestWorlds.M(32)), new Fixed2(TestWorlds.M(48), TestWorlds.M(32))) });
-        for (int t = 0; t < 200; t++)
-            template.Step();
-        Assert.True(template.DynamicCover.Count >= 5, "phase A must crater the area");
 
         int openTotal = 0, coveredTotal = 0;
         for (int seed = 1; seed <= 6; seed++)
         {
+            // Phase A on the real duel world: crater (48,32) using an off-map spotter.
+            var cratered = TestWorlds.Create((ulong)(seed + 100));
+            int spotterA = cratered.Spawn(Side.Allies, UnitTypes.RifleSquad.Id,
+                new Fixed2(TestWorlds.M(4), TestWorlds.M(60)));
+            cratered.Step(new[] { new Command(spotterA, CommandType.Barrage,
+                new Fixed2(TestWorlds.M(48), TestWorlds.M(32)), new Fixed2(TestWorlds.M(48), TestWorlds.M(32))) });
+            for (int t = 0; t < 200; t++)
+                cratered.Step();
+            Assert.True(cratered.DynamicCover.Count >= 5, $"phase A must crater (seed {seed})");
+
             var open = TestWorlds.Create((ulong)seed);
             int shooterO = open.Spawn(Side.Allies, UnitTypes.MachineGunSection.Id, new Fixed2(TestWorlds.M(20), TestWorlds.M(32)));
             int targetO = open.Spawn(Side.Central, UnitTypes.RifleSquad.Id, new Fixed2(TestWorlds.M(48), TestWorlds.M(32)));
 
-            var cratered = TestWorlds.Create((ulong)(seed + 100));
             int shooterS = cratered.Spawn(Side.Allies, UnitTypes.MachineGunSection.Id, new Fixed2(TestWorlds.M(20), TestWorlds.M(32)));
             int targetS = cratered.Spawn(Side.Central, UnitTypes.RifleSquad.Id, new Fixed2(TestWorlds.M(48), TestWorlds.M(32)));
 
@@ -142,8 +141,26 @@ public class ArtilleryTests
         }
 
         Assert.True(openTotal > 12, $"sanity: reference duels must land hits ({openTotal})");
-        Assert.True(coveredTotal < openTotal,
-            $"craters must reduce hits: covered {coveredTotal} vs open {openTotal}");
+        Assert.True(coveredTotal < openTotal * 8 / 10,
+            $"craters must cut hits: covered {coveredTotal} vs open {openTotal}");
+    }
+
+    [Fact]
+    public void DynamicCrater_IsFoundByCoverLookup()
+    {
+        // Direct tombstone: dynamic cover participates in cover lookups exactly
+        // like static map cover. No statistics, no dice.
+        var world = TestWorlds.Create(3);
+        var spot = new Fixed2(TestWorlds.M(48), TestWorlds.M(32));
+
+        Assert.False(CombatSystem.TryGetBestCover(world, spot, out _),
+            "bare ground must read as no cover");
+
+        world.DynamicCover.Add(new CoverObject(spot, SimConfig.CraterRadius, CoverKind.Crater));
+
+        Assert.True(CombatSystem.TryGetBestCover(world, spot, out var kind),
+            "a fresh crater underfoot must read as cover");
+        Assert.Equal(CoverKind.Crater, kind);
     }
 
     [Fact]
