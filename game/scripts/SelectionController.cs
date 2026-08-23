@@ -97,6 +97,10 @@ public partial class SelectionController : Node3D
                 break;
 
             case MouseButton.Left when mb.Pressed:
+                // Space belongs to the camera's grab-pan; never begin a
+                // selection box under it.
+                if (Input.IsKeyPressed(Key.Space))
+                    break;
                 _dragging = true;
                 _dragStart = mb.Position;
                 _dragCur = mb.Position;
