@@ -289,6 +289,7 @@ public partial class RtsCamera : Camera3D
 
     private void Apply()
     {
+
         // Pitch flattens as you close in: strategic overhead vs over-the-shoulder.
         float zoomFrac = Mathf.Clamp(
             (_dist - MinDist) / (MaxDist - MinDist), 0f, 1f);

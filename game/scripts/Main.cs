@@ -80,6 +80,11 @@ public partial class Main : Node3D
 
     public override void _Ready()
     {
+        // Headless viewports default to a tiny rect, which wrecks all screen
+        // projection math (tests, raycasts). Give them the real window size.
+        if (DisplayServer.GetName().Contains("headless", StringComparison.OrdinalIgnoreCase))
+            GetWindow().Size = new Vector2I(1600, 900);
+
         var args = OS.GetCmdlineUserArgs();
         foreach (var a in args)
         {
@@ -437,6 +442,27 @@ public partial class Main : Node3D
         AddChild(_camera);
         _camera.Setup(w, h);
 
+        // The scene had no light at all: sun plus faint sky ambient so shapes
+        // actually read instead of floating in murk.
+        var sun = new DirectionalLight3D
+        {
+            RotationDegrees = new Vector3(-52, -30, 0),
+            LightEnergy = 1.15f,
+            ShadowEnabled = true,
+        };
+        AddChild(sun);
+
+        var env = new Godot.Environment
+        {
+            BackgroundMode = Godot.Environment.BGMode.Color,
+            BackgroundColor = new Color(0.16f, 0.17f, 0.14f),
+            AmbientLightSource = Godot.Environment.AmbientSource.Color,
+            AmbientLightColor = new Color(0.45f, 0.48f, 0.42f),
+            AmbientLightEnergy = 0.65f,
+        };
+        var worldEnv = new WorldEnvironment { Environment = env };
+        AddChild(worldEnv);
+
         foreach (var p in _world.Points)
         {
             var view = new CapturePointView();
@@ -454,14 +480,17 @@ public partial class Main : Node3D
         _minimap.SetMapSize(w, h);
         _minimap.ViewFootprint = () => _camera.ViewFootprint();
         _minimap.JumpRequested = (x, z) => _camera?.SetCenter(new Vector2(x, z));
+        _minimap.ClipContents = true;
+        // Explicit geometry: bottom-left corner, fixed 210 px wide. No containers.
+        _minimap.SetAnchorsPreset(Control.LayoutPreset.BottomLeft);
+        _minimap.AnchorLeft = 0; _minimap.AnchorRight = 0;
+        _minimap.AnchorTop = 1; _minimap.AnchorBottom = 1;
+        _minimap.OffsetLeft = 14;
+        _minimap.OffsetTop = -(14 + 136);
+        _minimap.OffsetRight = 14 + 210;
+        _minimap.OffsetBottom = -14;
         var mmLayer = new CanvasLayer { Layer = 4 };
-        var mmMargin = new MarginContainer
-        {
-            AnchorLeft = 0, AnchorBottom = 1, AnchorTop = 1, AnchorRight = 0,
-            OffsetLeft = 14, OffsetBottom = -14,
-        };
-        mmLayer.AddChild(mmMargin);
-        mmMargin.AddChild(_minimap);
+        mmLayer.AddChild(_minimap);
         AddChild(mmLayer);
 
         _selection = new SelectionController();
